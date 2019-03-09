@@ -1,11 +1,11 @@
-from torchdiffeq import odeint
+# from torchdiffeq import odeint
 from torch import nn
 import torch
 from scipy.integrate import odeint
 import numpy as np
 
 
-def y_example(x_0, x_1):
+def y_ex(x_0, x_1):
     """
 
     :param x_0:
@@ -15,8 +15,8 @@ def y_example(x_0, x_1):
     return x_0 * x_1
 
 
-def grad_y_example(x_0, x_1):
-    """
+def grad_y_ex(x_0, x_1):
+    """This is used as a parameter to the integrate function
 
     :param x_0:
     :param x_1:
@@ -26,6 +26,7 @@ def grad_y_example(x_0, x_1):
     return [x_1, x_0]
 
 
+# TODO: Should I pass this as a parameter to the integrate function?
 def interpolate(t, x_i, x_f):
     """To compute paths for integrate.
 
@@ -51,9 +52,10 @@ def grad_interpolate(t, x_i, x_f):
     return x_i - x_f
 
 
-class dynamics_basic(nn.Module):
-    # the underlying function we are trying to learn is y = x^2. Here we are explicitly writing the derivative
-    # dy/dx = 2x. Thus y is a 1d tensor and x is as usual 1d
+class DynamicsBasic(nn.Module):
+    """
+    Something
+    """
     def __init__(self, x_0_i, x_1_i, x_0_f, x_1_f, grad_y):
         """
 
@@ -69,7 +71,7 @@ class dynamics_basic(nn.Module):
         self.x_0, self.x_1 = self.x_0_i, self.x_1_i
         # TODO: I don't like the module having a "state" that changes as we call forward, because side-effects bad...
         #   Is there any way around this?
-        super(dynamics_basic, self).__init__()
+        super(DynamicsBasic, self).__init__()
 
     def forward(self, arg, t):
         """
@@ -92,19 +94,23 @@ class dynamics_basic(nn.Module):
         return y_increment
 
 
-def integrate_basic(num_t, y, grad_y):
+def integrate_basic(num_t, y, grad_y, x_0_i, x_1_i, x_0_f, x_1_f):
     """
 
     :param num_t:
+    :param y:
+    :param grad_y:
+    :param x_0_i:
+    :param x_1_i:
+    :param x_0_f:
+    :param x_1_f:
     :return:
     """
-    x_0_i, x_1_i = 0, 0
     y_i = [y(x_0_i, x_1_i)]
-    x_0_f, x_1_f = 2, 2
     y_f = [y(x_0_f, x_1_f)]
     t = np.linspace(.0, 1.0, num_t)[::-1]  # torch.linspace(0., 1.0, num_t)[::-1]
     with torch.no_grad():
-        calculated_y = odeint(dynamics_basic(x_0_i, x_1_i, x_0_f, x_1_f, grad_y), y_i, t)
+        calculated_y = odeint(DynamicsBasic(x_0_i, x_1_i, x_0_f, x_1_f, grad_y), y_i, t)
     return calculated_y, y_f
 
 
@@ -121,7 +127,11 @@ def integrate_basic(num_t, y, grad_y):
 #   Plot the path in the x-domain, and associated y-gradients, and y_increments ( = gradient * rectifier)
 
 if __name__ == "__main__":
-    num_t = 1000
-    sol = integrate_basic(num_t, y_example, grad_y_example)
-    calculated_y, true_y = sol
-    print(f"Calculated y = {calculated_y[-1]}, true y = {true_y}, difference: {calculated_y[-1] - true_y}")
+    num_t_ex = 1000
+    x_0_i_ex, x_1_i_ex = 0, 0  # TODO: Generalize this to be an arbitrary tensor.
+    x_0_f_ex, x_1_f_ex = 2, 2
+    sol = integrate_basic(num_t_ex, y_ex, grad_y_ex,
+                          x_0_i_ex, x_1_i_ex, x_0_f_ex, x_1_f_ex)
+    approx_y, true_y = sol
+    print(f"Calculated y = {approx_y[-1]}, true y = {true_y}, difference: {approx_y[-1] - true_y}")
+    # TODO: Change everything to be torch.tensor, so works with ricky's ode int!!!
