@@ -31,8 +31,9 @@ def interpolate(t, x_i, x_f):
     """
     # TODO: Change this to change our interpolation paths... Ex. add gaussian noise?
     # TODO: Return the rectificaiton term.  Currently [x_i - x_f], but depends on ?
-    print(x_i, x_f, (1.0 - t) * x_i + t * x_f, t)
+    # print(x_i, x_f, (1.0 - t) * x_i + t * x_f, t)
     return (1.0 - t) * x_i + t * x_f
+    #return ((t) * x_i + (1.0 - t) * x_f)
 
 
 def grad_interpolate(t, x_i, x_f):
@@ -45,6 +46,7 @@ def grad_interpolate(t, x_i, x_f):
     """
     # TODO: This function should be automatically generated from interpolate via autograd
     return -x_i + x_f
+    #return (x_i - x_f)
 
 
 class DynamicsBasic(nn.Module):
@@ -69,7 +71,7 @@ class DynamicsBasic(nn.Module):
         #   Is there any way around this?
         super(DynamicsBasic, self).__init__()
 
-    def forward(self, arg, t):
+    def forward(self, t, arg): #arg, t):
         """
 
         :param arg:
@@ -77,6 +79,7 @@ class DynamicsBasic(nn.Module):
         :return:
         """
         # y_0 = arg[0]
+
         self.x_0, self.x_1 = interpolate(t, self.x_0_i, self.x_0_f), interpolate(t, self.x_1_i, self.x_1_f)
 
         # TODO: Justify this step.  Ex. by the FTLI this computes our path integral, which gives correct answer by FTC.
@@ -106,7 +109,9 @@ def integrate_basic(num_t, y, grad_y, x_0_i, x_1_i, x_0_f, x_1_f):
     """
     y_i = tensor_type([y(x_0_i, x_1_i)], dtype=dtype)
     y_f = tensor_type([y(x_0_f, x_1_f)], dtype=dtype)
-    t = tensor_type(np.linspace(.0, 1.0, num_t), dtype=dtype) # torch.linspace(0., 1.0, num_t)[::-1]
+
+    arr = np.linspace(.0, 1.0, num_t)
+    t = tensor_type(arr, dtype=dtype) # torch.linspace(0., 1.0, num_t)[::-1]
     with torch.no_grad():
         calculated_y = odeint(DynamicsBasic(x_0_i, x_1_i, x_0_f, x_1_f, grad_y), y_i, t)
     return calculated_y, y_f
@@ -147,7 +152,7 @@ def grad_y_ex(x_0, x_1):
 
 if __name__ == "__main__":
     num_t_ex = 10
-    x_0_i_ex, x_1_i_ex = 0, 0  # TODO: Generalize this to be an arbitrary tensor.
+    x_0_i_ex, x_1_i_ex = 1, 1  # TODO: Generalize this to be an arbitrary tensor.
     x_0_f_ex, x_1_f_ex = 2, 2
     sol = integrate_basic(num_t_ex, y_ex, grad_y_ex,
                           x_0_i_ex, x_1_i_ex, x_0_f_ex, x_1_f_ex)
