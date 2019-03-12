@@ -50,7 +50,7 @@ class DynamicsBasic(nn.Module):
 
     # TODO: I don't like the module having a "state" that changes as we call forward, because side-effects bad...
     #   Is there any way around this?
-    def __init__(self, x_i, x_f, grad_y, W):
+    def __init__(self, x_i, x_f, grad_y, parameters):
         """
 
         :param x_i:
@@ -61,7 +61,8 @@ class DynamicsBasic(nn.Module):
         self.grad_y = grad_y
         self.x_i, self.x_f = x_i, x_f
         self.x = self.x_i
-        self.Ws = [W]
+        self.Ws = [parameters[0]]
+        self.bs = [parameters[1]]
 
         def interpolate(t):
             # TODO: Change this to change our interpolation paths... Ex. add gaussian noise?
@@ -80,18 +81,15 @@ class DynamicsBasic(nn.Module):
         # y_0 = arg[0]
 
         # First compute dy / dx for integration
-        gradient_term = self.grad_y(self.x, self.Ws[0])  # TODO: Make this a function, which is passed to integrate basic.
-        # Second, compute dx / dt now for rectification of integration.
-        # t.requires_grad = True
-        #print(t)
+        gradient_term = self.grad_y(self.x, self.Ws[0], self.bs[0])
 
+        # Second, compute dx / dt now for rectification of integration.
         self.x = self.interpolate(t)
         path_rectification_term = torch.zeros(self.x.shape[0], dtype=dtype)
         for index, entry in enumerate(self.x):
             #entry.backward(create_graph=True, retain_graph=True)
             path_rectification_term[index] = torch.autograd.grad(entry, t, retain_graph=True)[0]  # t.grad
             # t.grad.data.zero_()
-        # path_rectification_term = torch.transpose(torch.tensor([-self.x_i + self.x_f], dtype=dtype), 0 , 1)  #
         #print(f"gradient_term: {gradient_term}, rect_term: {path_rectification_term}, y:{arg}")
 
         # Finally, combine dy/dx and dx/dt.
@@ -100,7 +98,7 @@ class DynamicsBasic(nn.Module):
         return y_increment
 
 
-def integrate_basic(num_t, y, grad_y, x_i, y_i_ex, x_train, y_train, W):
+def integrate_basic(num_t, y, grad_y, x_i, y_i_ex, x_train, y_train, parameters):
     """
 
     :param num_t:
@@ -113,34 +111,16 @@ def integrate_basic(num_t, y, grad_y, x_i, y_i_ex, x_train, y_train, W):
     :param W:
     :return:
     """
-    # y_f = tensor_type([y(x_f)], dtype=dtype)
-
     t = tensor_type(np.linspace(.0, 1.0, num_t), dtype=dtype, requires_grad=True)
-    rtol, atol = 0.01, 0.01
-    # approx_ys = torch.tensor([odeint(DynamicsBasic(x_i, x_f, grad_y, W), y_i_ex, t, rtol, atol)[-1]
-    #                          for x_f in x_train],
-    #                         dtype=dtype, requires_grad=True)
-    # losses = (y_train - approx_ys) ** 2
     total_loss = 0
     for index, x_f in enumerate(x_train):
-        approx_y = odeint(DynamicsBasic(x_i, x_f, grad_y, W), y_i_ex, t, rtol, atol)[-1]
+        rtol, atol = 0.01, 0.01
+        approx_y = odeint(DynamicsBasic(x_i, x_f, grad_y, parameters), y_i_ex, t, rtol, atol)[-1]
         total_loss += (y_train[index] - approx_y) ** 2
     #print(approx_ys, y_train)
 
-    #total_loss = torch.sum(losses) / float(len(losses))
     print(f"Total loss: {total_loss}")
     return total_loss / float(x_train.shape[0])
-
-
-# TODO: rename variables and functions to make sense for this case
-# TODO: non-linear paths?  Change interpolate(...) to do this.
-
-# TODO: Try to learn the gradient function for some given (x_0, x_1, y_0) training tuples
-# TODO: Compare learning gradient and integrating to directly regressing the function.
-
-# TODO: Visualize the problem.
-#   Ex. two axes - one for x-domain and one for y-domain
-#   Plot the path in the x-domain, and associated y-gradients, and y_increments ( = gradient * rectifier)
 
 def y_ex(x):
     """This gives true data points for training.
@@ -151,7 +131,7 @@ def y_ex(x):
     return x[0] * x[1]
 
 
-def grad_y_ex(x, W):
+def grad_y_ex(x, W, b):
     """This gives true gradients for comparison.
 
     :param x:
@@ -161,14 +141,14 @@ def grad_y_ex(x, W):
     return tensor_type([x[1], x[0]], dtype=dtype)
 
 
-def approx_grad_y(x, W):
+def approx_grad_y(x, W, b):
     """This is our learned gradient.
 
     :param x:
     :param W:
     :return:
     """
-    return W @ x  # dot(W, x)
+    return W @ x + b  # dot(W, x)
 
 
 def approx_y(x, W):
@@ -178,7 +158,7 @@ def approx_y(x, W):
     :param W:
     :return:
     """
-    pass
+    pass  # TODO: Put ODE_int inside of here?
 
 
 if __name__ == "__main__":
@@ -196,24 +176,47 @@ if __name__ == "__main__":
     num_t_ex = 10
 
     # Create our initial weights
-    W = torch.zeros(x_dim, x_dim, requires_grad=True)  # Should be a function that takes in x_dim and outputs y_dim x x_dim
-    #W.requires_grad = True
+    W = torch.zeros(x_dim, x_dim, requires_grad=True)
+    b = torch.zeros(x_dim, requires_grad=True)
+    parameters = (W, b)
+    # TODO: Should be a function that takes in x_dim and outputs y_dim x x_dim
     W.retain_grad = True
+    b.retain_grad = True  # TODO: Do I need this?
 
-    def curried_integrate_basic(W_cur):
+    def curried_integrate_basic(parameters):
         # Swap grad_y_ex for approx_grad_y
         # return integrate_basic(num_t_ex, y_ex, grad_y_ex, x_i_ex, y_i_ex, x_train, y_train, W_cur)
-        return integrate_basic(num_t_ex, y_ex, approx_grad_y, x_i_ex, y_i_ex, x_train, y_train, W_cur)
+        return integrate_basic(num_t_ex, y_ex, approx_grad_y, x_i_ex, y_i_ex, x_train, y_train, parameters)
 
-    num_iters = 10
-    lr = 1.0
+    num_iters = 100
+    lr = 0.1
+    decay_val = 0.1
     for i in range(num_iters):
-        total_loss = curried_integrate_basic(W)
-        print(f"Iteration:{i}, total_loss: {total_loss}")
-        W_grad = torch.autograd.grad(total_loss, W)[0]
-        # print(W_grad)
-        W.data -= lr * W_grad
-    print(f"Final W: {W}")
+        pred_loss = curried_integrate_basic(parameters)
+        reg_loss = decay_val * (torch.sum(torch.abs(W)) + torch.sum(torch.abs(b)))
+        # print(reg_loss)
+        total_loss = pred_loss + reg_loss
+        print(f"Iteration:{i}, total_loss: {total_loss}, pred_loss: {pred_loss}, reg_loss: {reg_loss}")
+        total_loss.backward()
+        #print(W.grad, b.grad)
+        for parameter in parameters:
+            #parameter_grad = torch.autograd.grad(total_loss, parameter, retain_graph=True)[0]
+            if parameter.grad is not None:
+                parameter.data -= lr * parameter.grad
+                parameter.grad.data.zero_()
+        print(f"Final W: {W}, final b: {b}")
 
 
-    ## TODO: This is basically my loss!  Define grad_y_ex with parameters that optimized
+    # TODO:
+    #   Make W the parameters to a deep net, as opposed to linear regression
+    #   Train on minibatches of x?
+    #   Make it work on learning high-dimensional y's
+    #   Make it work on MNIST (high dim x and y)
+    #   Non-linear interpolate?
+    #   rename variables / functions to make sense now
+    #   Make a way to visualize the problem:
+    #       ex. x domain with path, y-domain with jabobian*rectifier field, y-domain with labels
+    #   Compare learned gradient with exact gradient for regressing function?  Gets rid of integration numerical error
+    #   Make it work on the GPU
+    #   Write the README.
+    #   Abstract away components which can be re-used?  Think about overall goals...
