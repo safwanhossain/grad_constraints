@@ -50,21 +50,26 @@ class DynamicsBasic(nn.Module):
 
     # TODO: I don't like the module having a "state" that changes as we call forward, because side-effects bad...
     #   Is there any way around this?
-    def __init__(self, x_i, x_f, grad_y, parameters):
+    def __init__(self, x_i, x_f, grad_y, parameters_local):
         """
 
         :param x_i:
         :param x_f:
         :param grad_y:
-        :param W:
+        :param parameters_local:
         """
         self.grad_y = grad_y
         self.x_i, self.x_f = x_i, x_f
         self.x = self.x_i
-        self.Ws = [parameters[0]]
-        self.bs = [parameters[1]]
+        self.Ws = [parameters_local[0]]
+        self.bs = [parameters_local[1]]
 
         def interpolate(t):
+            """
+
+            :param t:
+            :return:
+            """
             # TODO: Change this to change our interpolation paths... Ex. add gaussian noise?
             return (1.0 - t) * self.x_i + t * self.x_f
 
@@ -98,25 +103,25 @@ class DynamicsBasic(nn.Module):
         return y_increment
 
 
-def integrate_basic(num_t, y, grad_y, x_i, y_i_ex, x_train, y_train, parameters):
+def integrate_basic(num_t, y, grad_y, x_i_loc, y_i_loc, x_train_loc, y_train_loc, parameters_loc):
     """
 
     :param num_t:
     :param y:
     :param grad_y:
-    :param x_i:
-    :param y_i_ex:
-    :param x_train:
-    :param y_train:
-    :param W:
+    :param x_i_loc:
+    :param y_i_loc:
+    :param x_train_loc:
+    :param y_train_loc:
+    :param parameters_loc:
     :return:
     """
     t = tensor_type(np.linspace(.0, 1.0, num_t), dtype=dtype, requires_grad=True)
     total_loss = 0
-    for index, x_f in enumerate(x_train):
+    for index, x_f in enumerate(x_train_loc):
         rtol, atol = 0.01, 0.01
-        approx_y = odeint(DynamicsBasic(x_i, x_f, grad_y, parameters), y_i_ex, t, rtol, atol)[-1]
-        total_loss += (y_train[index] - approx_y) ** 2
+        approx_y_loc = odeint(DynamicsBasic(x_i_loc, x_f, grad_y, parameters_loc), y_i_loc, t, rtol, atol)[-1]
+        total_loss += (y_train_loc[index] - approx_y_loc) ** 2
     # print(approx_ys, y_train)
 
     print(f"Total loss: {total_loss}")
@@ -132,31 +137,33 @@ def y_ex(x):
     return x[0] * x[1]
 
 
-def grad_y_ex(x, W, b):
-    """This gives true gradients for comparison.
+def grad_y_ex(x, W_loc, b_loc):
+    """
 
     :param x:
-    :param W: unused
+    :param W_loc:
+    :param b_loc:
     :return:
     """
     return tensor_type([x[1], x[0]], dtype=dtype)
 
 
-def approx_grad_y(x, W, b):
-    """This is our learned gradient.
+def approx_grad_y(x, W_loc, b_loc):
+    """
 
     :param x:
-    :param W:
+    :param W_loc:
+    :param b_loc:
     :return:
     """
-    return W @ x + b  # dot(W, x)
+    return W_loc @ x + b_loc  # dot(W, x)
 
 
-def approx_y(x, W):
-    """This is our learned function, computed by integrating the approximate derivative.
+def approx_y(x, W_loc):
+    """
 
     :param x:
-    :param W:
+    :param W_loc:
     :return:
     """
     pass  # TODO: Put ODE_int inside of here?
@@ -179,35 +186,38 @@ if __name__ == "__main__":
     # Create our initial weights
     W = torch.zeros(x_dim, x_dim, requires_grad=True)
     b = torch.zeros(x_dim, requires_grad=True)
-    parameters = (W, b)
-    # TODO: Should be a function that takes in x_dim and outputs y_dim x x_dim
-    W.retain_grad = True
-    b.retain_grad = True  # TODO: Do I need this?
+    parameters = (W, b)  # TODO: Should be a function that takes in x and outputs (dim(y), dim(x)) Jacobian.
 
 
-    def curried_integrate_basic(parameters):
+    def curried_integrate_basic(parameters_loc):
+        """
+
+        :param parameters_loc:
+        :return:
+        """
         # Swap grad_y_ex for approx_grad_y
         # return integrate_basic(num_t_ex, y_ex, grad_y_ex, x_i_ex, y_i_ex, x_train, y_train, W_cur)
-        return integrate_basic(num_t_ex, y_ex, approx_grad_y, x_i_ex, y_i_ex, x_train, y_train, parameters)
+        return integrate_basic(num_t_ex, y_ex, approx_grad_y, x_i_ex, y_i_ex, x_train, y_train, parameters_loc)
 
 
-    num_iters = 100
-    lr = 0.1
-    decay_val = 0.1
+    pred_loss = 10e32  # Some initial value
+    num_iters = 100  # The number of gradient descent iterations.
+    lr = 0.1  # The learning rate for gradient descent.
+    decay_val = 0.1  # The multiplier for our weight decay.
     for i in range(num_iters):
         pred_loss = curried_integrate_basic(parameters)
         reg_loss = decay_val * (torch.sum(torch.abs(W)) + torch.sum(torch.abs(b)))
         # print(reg_loss)
-        total_loss = pred_loss + reg_loss
-        print(f"Iteration:{i}, total_loss: {total_loss}, pred_loss: {pred_loss}, reg_loss: {reg_loss}")
-        total_loss.backward()
+        total_loss_cur = pred_loss + reg_loss
+        print(f"Iteration:{i}, total_loss: {total_loss_cur}, pred_loss: {pred_loss}, reg_loss: {reg_loss}")
+        total_loss_cur.backward()
         # print(W.grad, b.grad)
         for parameter in parameters:
             # parameter_grad = torch.autograd.grad(total_loss, parameter, retain_graph=True)[0]
             if parameter.grad is not None:
                 parameter.data -= lr * parameter.grad
                 parameter.grad.data.zero_()
-        print(f"Final W: {W}, final b: {b}")
+        print(f"Final W: {W}, final b: {b}, final prediction loss: {pred_loss}")
 
     # TODO:
     #   Make W the parameters to a deep net, as opposed to linear regression
