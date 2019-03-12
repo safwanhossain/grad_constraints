@@ -87,10 +87,10 @@ class DynamicsBasic(nn.Module):
         self.x = self.interpolate(t)
         path_rectification_term = torch.zeros(self.x.shape[0], dtype=dtype)
         for index, entry in enumerate(self.x):
-            #entry.backward(create_graph=True, retain_graph=True)
+            # entry.backward(create_graph=True, retain_graph=True)
             path_rectification_term[index] = torch.autograd.grad(entry, t, retain_graph=True)[0]  # t.grad
             # t.grad.data.zero_()
-        #print(f"gradient_term: {gradient_term}, rect_term: {path_rectification_term}, y:{arg}")
+        # print(f"gradient_term: {gradient_term}, rect_term: {path_rectification_term}, y:{arg}")
 
         # Finally, combine dy/dx and dx/dt.
         y_increment = gradient_term @ path_rectification_term
@@ -117,10 +117,11 @@ def integrate_basic(num_t, y, grad_y, x_i, y_i_ex, x_train, y_train, parameters)
         rtol, atol = 0.01, 0.01
         approx_y = odeint(DynamicsBasic(x_i, x_f, grad_y, parameters), y_i_ex, t, rtol, atol)[-1]
         total_loss += (y_train[index] - approx_y) ** 2
-    #print(approx_ys, y_train)
+    # print(approx_ys, y_train)
 
     print(f"Total loss: {total_loss}")
     return total_loss / float(x_train.shape[0])
+
 
 def y_ex(x):
     """This gives true data points for training.
@@ -183,10 +184,12 @@ if __name__ == "__main__":
     W.retain_grad = True
     b.retain_grad = True  # TODO: Do I need this?
 
+
     def curried_integrate_basic(parameters):
         # Swap grad_y_ex for approx_grad_y
         # return integrate_basic(num_t_ex, y_ex, grad_y_ex, x_i_ex, y_i_ex, x_train, y_train, W_cur)
         return integrate_basic(num_t_ex, y_ex, approx_grad_y, x_i_ex, y_i_ex, x_train, y_train, parameters)
+
 
     num_iters = 100
     lr = 0.1
@@ -198,14 +201,13 @@ if __name__ == "__main__":
         total_loss = pred_loss + reg_loss
         print(f"Iteration:{i}, total_loss: {total_loss}, pred_loss: {pred_loss}, reg_loss: {reg_loss}")
         total_loss.backward()
-        #print(W.grad, b.grad)
+        # print(W.grad, b.grad)
         for parameter in parameters:
-            #parameter_grad = torch.autograd.grad(total_loss, parameter, retain_graph=True)[0]
+            # parameter_grad = torch.autograd.grad(total_loss, parameter, retain_graph=True)[0]
             if parameter.grad is not None:
                 parameter.data -= lr * parameter.grad
                 parameter.grad.data.zero_()
         print(f"Final W: {W}, final b: {b}")
-
 
     # TODO:
     #   Make W the parameters to a deep net, as opposed to linear regression
