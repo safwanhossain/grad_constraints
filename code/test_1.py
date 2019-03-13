@@ -1,46 +1,13 @@
 """
 Notes on this file
 """
-
 from torch import nn
 import torch
-import numpy as np
+import torch.autograd as autograd
+from torch.nn import Sigmoid
 from torchdiffeq import odeint
 
-tensor_type = torch.tensor
 dtype = torch.float32
-dot = torch.dot
-
-'''tensor_type = np.array
-dtype = np.float64
-dot = np.dot
-from scipy.integrate import odeint'''
-
-'''# TODO: Should I pass this as a parameter to the integrate function?
-def interpolate(t, x_i, x_f):
-    """To compute paths for integrate.
-
-    :param t:
-    :param x_i:
-    :param x_f:
-    :return:
-    """
-    # TODO: Change this to change our interpolation paths... Ex. add gaussian noise?
-    # TODO: Return the rectificaiton term.  Currently [x_i - x_f], but depends on ?
-    # print(x_i, x_f, (1.0 - t) * x_i + t * x_f, t)
-    return (1.0 - t) * x_i + t * x_f
-
-
-def grad_interpolate(t, x_i, x_f):
-    """To rectify our paths in integrate.
-
-    :param t:
-    :param x_i:
-    :param x_f:
-    :return:
-    """
-    # TODO: This function should be automatically generated from interpolate via autograd
-    return -x_i + x_f'''
 
 
 class DynamicsBasic(nn.Module):
@@ -50,19 +17,19 @@ class DynamicsBasic(nn.Module):
 
     # TODO: I don't like the module having a "state" that changes as we call forward, because side-effects bad...
     #   Is there any way around this?
-    def __init__(self, x_i, x_f, grad_y, parameters_local):
+    def __init__(self, x_i, x_f, grad_y, parameters):
         """
 
         :param x_i:
         :param x_f:
         :param grad_y:
-        :param parameters_local:
+        :param parameters:
         """
         self.grad_y = grad_y
         self.x_i, self.x_f = x_i, x_f
         self.x = self.x_i
-        self.Ws = [parameters_local[0]]
-        self.bs = [parameters_local[1]]
+        self.Ws = [parameters[0]]
+        self.bs = [parameters[1]]
 
         def interpolate(t):
             """
@@ -76,15 +43,13 @@ class DynamicsBasic(nn.Module):
         self.interpolate = interpolate
         super(DynamicsBasic, self).__init__()
 
-    def forward(self, t, arg):  # arg, t):
+    def forward(self, t, y):
         """
 
         :param arg:
-        :param t:
+        :param y:
         :return:
         """
-        # y_0 = arg[0]
-
         # First compute dy / dx for integration
         gradient_term = self.grad_y(self.x, self.Ws[0], self.bs[0])
 
@@ -92,9 +57,7 @@ class DynamicsBasic(nn.Module):
         self.x = self.interpolate(t)
         path_rectification_term = torch.zeros(self.x.shape[0], dtype=dtype)
         for index, entry in enumerate(self.x):
-            # entry.backward(create_graph=True, retain_graph=True)
-            path_rectification_term[index] = torch.autograd.grad(entry, t, retain_graph=True)[0]  # t.grad
-            # t.grad.data.zero_()
+            path_rectification_term[index] = autograd.grad(entry, t, retain_graph=True)[0]  # t.grad
         # print(f"gradient_term: {gradient_term}, rect_term: {path_rectification_term}, y:{arg}")
 
         # Finally, combine dy/dx and dx/dt.
@@ -103,28 +66,27 @@ class DynamicsBasic(nn.Module):
         return y_increment
 
 
-def integrate_basic(num_t, y, grad_y, x_i_loc, y_i_loc, x_train_loc, y_train_loc, parameters_loc):
+def integrate_basic(num_t, y, grad_y, x_i, y_i, x_train, y_train, parameters):
     """
 
     :param num_t:
     :param y:
     :param grad_y:
-    :param x_i_loc:
-    :param y_i_loc:
-    :param x_train_loc:
-    :param y_train_loc:
-    :param parameters_loc:
+    :param x_i:
+    :param y_i:
+    :param x_train:
+    :param y_train:
+    :param parameters:
     :return:
     """
-    t = tensor_type(np.linspace(.0, 1.0, num_t), dtype=dtype, requires_grad=True)
+    t = torch.linspace(.0, 1.0, num_t).clone().detach().requires_grad_(True)
     total_loss = 0
-    for index, x_f in enumerate(x_train_loc):
-        rtol, atol = 0.01, 0.01
-        approx_y_loc = odeint(DynamicsBasic(x_i_loc, x_f, grad_y, parameters_loc), y_i_loc, t, rtol, atol)[-1]
-        total_loss += (y_train_loc[index] - approx_y_loc) ** 2
-    # print(approx_ys, y_train)
+    for index, x_f in enumerate(x_train):
+        rtol, atol = 0.001, 0.001
+        y = approx_y(x_i, x_f, grad_y, parameters, y_i, t, rtol, atol)
+        total_loss += (y_train[index] - y) ** 2
 
-    print(f"Total loss: {total_loss}")
+    # print(f"Total loss: {total_loss}")
     return total_loss / float(x_train.shape[0])
 
 
@@ -138,42 +100,52 @@ def y_ex(x):
     return torch.abs(x)[0]  # torch.sum(torch.abs(x), 0)  #torch.max(x, 0)[0]
 
 
-def grad_y_ex(x, W_loc, b_loc):
+def grad_y_ex(x, W, b):
     """
 
     :param x:
-    :param W_loc:
-    :param b_loc:
+    :param W:
+    :param b:
     :return:
     """
-    return tensor_type([x[1], x[0]], dtype=dtype)
+    return torch.tensor([x[1], x[0]], dtype=dtype)
 
 
-def approx_grad_y(x, W_loc, b_loc):
+def approx_grad_y(x, W, b):
     """
 
     :param x:
-    :param W_loc:
-    :param b_loc:
+    :param W:
+    :param b:
     :return:
     """
     # TODO: some deep neural network of x.
-    return torch.sigmoid(W_loc @ x) * 2.0 - 1.0  # dot(W, x)
+    return Sigmoid()(W @ x) * 2.0 - 1.0
 
 
-def approx_y(x, W_loc):
+def approx_y(x_i, x_f, grad_y, parameters, y_i, t, rtol, atol):
     """
 
-    :param x:
-    :param W_loc:
+    :param x_i:
+    :param x_f:
+    :param grad_y:
+    :param parameters:
+    :param y_i:
+    :param t:
+    :param rtol:
+    :param atol:
     :return:
     """
-    pass  # TODO: Put ODE_int inside of here?
+    # TODO: I can apply an activation on our final value too.
+    return odeint(DynamicsBasic(x_i, x_f, grad_y, parameters), y_i, t, rtol, atol)[-1]
 
 
-if __name__ == "__main__":
-    torch.manual_seed(0)
+def main(args):
+    """
 
+    :param args:
+    :return:
+    """
     # Create a dataset.
     num_train = 10
     x_dim, y_dim = 1, 1
@@ -181,7 +153,7 @@ if __name__ == "__main__":
     y_train = y_ex(torch.transpose(x_train, 0, 1))
 
     # Create our initial value.
-    x_i_ex = torch.zeros(x_dim, dtype=dtype)  # tensor_type([.0, .0], dtype=dtype)
+    x_i_ex = torch.zeros(x_dim, dtype=dtype)
     y_i_ex = y_ex(x_i_ex)
     num_t_ex = 10
 
@@ -189,7 +161,6 @@ if __name__ == "__main__":
     W = torch.zeros(x_dim, x_dim, requires_grad=True)
     b = torch.zeros(x_dim, requires_grad=True)
     parameters = (W, b)  # TODO: Should be a function that takes in x and outputs (dim(y), dim(x)) Jacobian.
-
 
     def curried_integrate_basic(parameters_loc):
         """
@@ -201,11 +172,10 @@ if __name__ == "__main__":
         # return integrate_basic(num_t_ex, y_ex, grad_y_ex, x_i_ex, y_i_ex, x_train, y_train, W_cur)
         return integrate_basic(num_t_ex, y_ex, approx_grad_y, x_i_ex, y_i_ex, x_train, y_train, parameters_loc)
 
-
     pred_loss = 10e32  # Some initial value
     num_iters = 100  # The number of gradient descent iterations.
-    lr = 1.0  #0.1  # The learning rate for gradient descent.
-    decay_val = 0.0#1  # The multiplier for our weight decay.
+    lr = 1.0  # 0.1  # The learning rate for gradient descent.
+    decay_val = 0.0  # 1  # The multiplier for our weight decay.
     for i in range(num_iters):
         pred_loss = curried_integrate_basic(parameters)
         reg_loss = decay_val * (torch.sum(torch.abs(W)) + torch.sum(torch.abs(b)))
@@ -221,9 +191,18 @@ if __name__ == "__main__":
                 parameter.grad.data.zero_()
         print(f"Final W: {W}, final b: {b}, final prediction loss: {pred_loss}")
 
+
+if __name__ == "__main__":
+    torch.manual_seed(0)
+    args = None  # TODO: Add argument parser
+    main(args)
+
     # TODO:
+    #   Type annotations
     #   Make a validation set and compare with train loss
-    #   Create logging for a grapher.
+    #   Create logging for a grapher - losses and all values
+    #   compute integral from closest "query" point?
+    #   Understand how to set rtol/atol
     #   Make W the parameters to a deep net, as opposed to linear regression
     #   Train on minibatches of x?
     #   Make it work on learning high-dimensional y's
