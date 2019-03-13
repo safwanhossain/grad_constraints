@@ -134,7 +134,8 @@ def y_ex(x):
     :param x:
     :return:
     """
-    return x[0] * x[1]
+    print(f"sum:{torch.sum(x, 0)}, max:{torch.max(x, 0)[0]}, abs:{torch.abs(x)[0]}")
+    return torch.abs(x)[0]  # torch.sum(torch.abs(x), 0)  #torch.max(x, 0)[0]
 
 
 def grad_y_ex(x, W_loc, b_loc):
@@ -156,7 +157,8 @@ def approx_grad_y(x, W_loc, b_loc):
     :param b_loc:
     :return:
     """
-    return W_loc @ x + b_loc  # dot(W, x)
+    # TODO: some deep neural network of x.
+    return torch.sigmoid(W_loc @ x) * 2.0 - 1.0  # dot(W, x)
 
 
 def approx_y(x, W_loc):
@@ -174,12 +176,12 @@ if __name__ == "__main__":
 
     # Create a dataset.
     num_train = 10
-    x_dim, y_dim = 2, 1
+    x_dim, y_dim = 1, 1
     x_train = torch.randn(num_train, x_dim)
     y_train = y_ex(torch.transpose(x_train, 0, 1))
 
     # Create our initial value.
-    x_i_ex = tensor_type([.0, .0], dtype=dtype)
+    x_i_ex = torch.zeros(x_dim, dtype=dtype)  # tensor_type([.0, .0], dtype=dtype)
     y_i_ex = y_ex(x_i_ex)
     num_t_ex = 10
 
@@ -202,8 +204,8 @@ if __name__ == "__main__":
 
     pred_loss = 10e32  # Some initial value
     num_iters = 100  # The number of gradient descent iterations.
-    lr = 0.1  # The learning rate for gradient descent.
-    decay_val = 0.1  # The multiplier for our weight decay.
+    lr = 1.0  #0.1  # The learning rate for gradient descent.
+    decay_val = 0.0#1  # The multiplier for our weight decay.
     for i in range(num_iters):
         pred_loss = curried_integrate_basic(parameters)
         reg_loss = decay_val * (torch.sum(torch.abs(W)) + torch.sum(torch.abs(b)))
@@ -220,6 +222,8 @@ if __name__ == "__main__":
         print(f"Final W: {W}, final b: {b}, final prediction loss: {pred_loss}")
 
     # TODO:
+    #   Make a validation set and compare with train loss
+    #   Create logging for a grapher.
     #   Make W the parameters to a deep net, as opposed to linear regression
     #   Train on minibatches of x?
     #   Make it work on learning high-dimensional y's
