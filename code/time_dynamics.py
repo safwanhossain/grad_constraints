@@ -16,6 +16,7 @@ class TimeDynamics(nn.Module):
         :param x_f: final x value
         :param grad_y: network to compute Jacobian
         """
+        super(TimeDynamics, self).__init__()
         self.deriv_y = deriv_y
         self.x_i, self.x_f = x_i, x_f
 
@@ -28,7 +29,6 @@ class TimeDynamics(nn.Module):
             return (1.0 - t) * self.x_i + t * self.x_f
 
         self.path = path
-        super(TimeDynamics, self).__init__()
 
     def forward(self, t, y):
         """
