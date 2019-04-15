@@ -32,10 +32,10 @@ class Dynamics(nn.Module):
         self.d = 2
         self.linear_layers = nn.Sequential(
             nn.Linear(xdim, self.d),
-            nn.Sigmoid(),
+            nn.ReLU(),
 
             nn.Linear(self.d, self.d),
-            nn.Sigmoid(),
+            nn.ReLU(),
 
             nn.Linear(self.d, xdim*ydim)
         )
