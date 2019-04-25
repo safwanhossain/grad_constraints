@@ -11,10 +11,11 @@ class OneParam(nn.Module):
         # Use Learning rate of 0.5 and no momentum (for SGD)
 
         super(OneParam, self).__init__()
-        self.W = nn.Parameter(torch.zeros(xdim, requires_grad=True))
+        self.W = nn.Parameter(torch.randn(xdim, requires_grad=True)* 0.001)
+        # self.b = nn.Parameter(torch.zeros(xdim, requires_grad=True))
 
     def forward(self, x):
-        out = nn.functional.sigmoid(self.W * x) * 2 - 1
+        out = torch.sigmoid(self.W * x) * 2 - 1
         return out
 
 
@@ -31,13 +32,13 @@ class Dynamics(nn.Module):
         self.ydim = ydim
 
         # Layers
-        self.d = 2
+        self.d = 50
         self.linear_layers = nn.Sequential(
             nn.Linear(xdim, self.d),
-            nn.ReLU(),
+            torch.nn.LeakyReLU(),
 
             nn.Linear(self.d, self.d),
-            nn.ReLU(),
+            torch.nn.LeakyReLU(),
 
             nn.Linear(self.d, xdim * ydim)
         )

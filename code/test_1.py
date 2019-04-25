@@ -50,11 +50,13 @@ class DynamicsBasic(nn.Module):
         :param y:
         :return:
         """
+        self.x = self.interpolate(t)
+
         # First compute dy / dx for integration
         gradient_term = self.grad_y(self.x, self.Ws[0], self.bs[0])
 
         # Second, compute dx / dt now for rectification of integration.
-        self.x = self.interpolate(t)
+
         path_rectification_term = torch.zeros(self.x.shape[0], dtype=dtype)
         for index, entry in enumerate(self.x):
             path_rectification_term[index] = autograd.grad(entry, t, retain_graph=True)[0]  # t.grad
@@ -64,6 +66,63 @@ class DynamicsBasic(nn.Module):
         y_increment = gradient_term @ path_rectification_term
         # print(f"y_increment: {y_increment}, x: {self.x}, t: {t}")
         return y_increment
+
+
+class InverseDynamicsBasic(nn.Module):
+    """
+    Write something here. The name DynamicsBasic should probably be changed.
+    """
+
+    # TODO: I don't like the module having a "state" that changes as we call forward, because side-effects bad...
+    #   Is there any way around this?
+    def __init__(self, y_i, y_f, grad_y, parameters):
+        """
+
+        :param x_i:
+        :param x_f:
+        :param grad_y:
+        :param parameters:
+        """
+        self.grad_y = grad_y
+        self.y_i, self.y_f = y_i, y_f
+        self.Ws = [parameters[0]]
+        self.bs = [parameters[1]]
+
+        def interpolate(t):
+            """
+
+            :param t:
+            :return:
+            """
+            # TODO: Change this to change our interpolation paths... Ex. add gaussian noise?
+            return (1.0 - t) * self.y_i + t * self.y_f
+
+        self.interpolate = interpolate
+        super(InverseDynamicsBasic, self).__init__()
+
+    def forward(self, t, x):
+        """
+
+        :param arg:
+        :param y:
+        :return:
+        """
+        # First compute dy / dx for integration
+        gradient_term = self.grad_y(x, self.Ws[0], self.bs[0])
+        inverse_gradient_term = torch.pinverse(gradient_term)
+        print(inverse_gradient_term)
+
+        # Second, compute dx / dt now for rectification of integration.
+        self.y = self.interpolate(t)
+        path_rectification_term = torch.zeros(self.y.shape[0], dtype=dtype)
+        for index, entry in enumerate(self.y):
+            path_rectification_term[index] = autograd.grad(entry, t, retain_graph=True)[0]  # t.grad
+        # print(f"gradient_term: {gradient_term}, rect_term: {path_rectification_term}, y:{arg}")
+
+        # Finally, combine dy/dx and dx/dt.
+        x_increment = inverse_gradient_term @ path_rectification_term
+        # print(f"y_increment: {y_increment}, x: {self.x}, t: {t}")
+        return x_increment
 
 
 def integrate_basic(num_t, y, grad_y, x_i, y_i, x_train, y_train, parameters):

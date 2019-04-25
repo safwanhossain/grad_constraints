@@ -52,6 +52,55 @@ class TimeDynamics(nn.Module):
         return y_increment
 
 
+class InverseTimeDynamics(nn.Module):
+    """
+
+    """
+
+    def __init__(self, y_i, y_f, deriv_y):
+        """
+        :param x_i: initial x value
+        :param x_f: final x value
+        :param grad_y: network to compute Jacobian
+        """
+        super(InverseTimeDynamics, self).__init__()
+        self.deriv_y = deriv_y
+        self.y_i, self.y_f = y_i, y_f
+
+        def path(t):
+            """ For now, consider a straight line between x_i and x_f
+            :param t:
+            :return:
+            """
+            # Add a way to easily parametrize other paths
+            return (1.0 - t) * self.y_i + t * self.y_f
+
+        self.path = path
+
+    def forward(self, t, x):
+        """
+
+        :param t: array of time instances at which to compute dynamics for
+        :return:
+        """
+        curr_y = self.path(t).reshape(-1, 1)
+
+        gradient_term = self.deriv_y(x)
+        damping_scale = 0.00001
+        damping_x = torch.randn(x.shape).reshape(-1, 1)*damping_scale
+        damping_y = torch.randn(curr_y.shape).reshape(-1, 1)*damping_scale
+        inverse_gradient_term = torch.pinverse(gradient_term + damping_x @ damping_y)  # TODO: Add damping?
+
+
+
+        path_derivative = torch.zeros(curr_y.shape[0], dtype=dtype)
+        for index, entry in enumerate(curr_y):
+            path_derivative[index] = torch.autograd.grad(entry, t, retain_graph=True)[0]
+
+        x_increment = inverse_gradient_term @ path_derivative
+        return x_increment
+
+
 def unit_test_1_1():
     """ Test for the learned function mapping from R to R
         Function is y = x^2
