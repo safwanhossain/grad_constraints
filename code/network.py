@@ -11,16 +11,16 @@ class OneParam(nn.Module):
         # Use Learning rate of 0.5 and no momentum (for SGD)
 
         super(OneParam, self).__init__()
-        self.W = nn.Parameter(torch.randn(xdim, requires_grad=True)* 0.001)
+        self.W = nn.Parameter(torch.zeros(xdim, requires_grad=True))
         # self.b = nn.Parameter(torch.zeros(xdim, requires_grad=True))
 
     def forward(self, x):
-        out = torch.sigmoid(self.W * x) * 2 - 1
+        out = torch.tanh(self.W * x)
         return out
 
 
 class Dynamics(nn.Module):
-    def __init__(self, xdim, ydim):
+    def __init__(self, xdim, ydim, final_activation=None):
         """This module computes the dynamics at a point x. That is it return the Jacobian matrix
         where each element is dy_i/dx_j
         Output is a matrix of size ydim x xdim
@@ -30,6 +30,7 @@ class Dynamics(nn.Module):
         super(Dynamics, self).__init__()
         self.xdim = xdim
         self.ydim = ydim
+        self.final_activation = final_activation
 
         # Layers
         self.d = 50
@@ -46,6 +47,8 @@ class Dynamics(nn.Module):
     def forward(self, x):
         out = self.linear_layers(x)
         out = out.view(-1, self.ydim, self.xdim)
+        if self.final_activation is not None:
+            out = self.final_activation(out)
         return out.reshape(self.ydim, )
 
 

@@ -7,22 +7,21 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 
-from network import Dynamics, OneParam
+from network import Dynamics
 from time_dynamics import TimeDynamics, InverseTimeDynamics
 
 
 class derivative_net(object):
-    def __init__(self, x_dim, y_dim, initial_c, true_fcn, train_dataset, test_dataset, num_train, num_test, batch_size,
-                 num_epochs, rtol, atol, save_name, network_choice):
+    def __init__(self, initial_c, true_fcn, train_dataset, test_dataset, num_train, num_test, batch_size,
+                 num_epochs, rtol, atol, save_name, network_choice, optimizer, do_inverse):
         # TODO: This should be replaced with parser.args
-        self.x_dim = x_dim
-        self.y_dim = y_dim
         self.true_fcn = true_fcn
 
         self.train_dataset = train_dataset
         self.num_train = num_train
         self.test_dataset = test_dataset
         self.num_test = num_test
+        self.do_inverse = do_inverse
 
         self.x_i = initial_c[0]
         self.y_i = initial_c[1]
@@ -38,13 +37,13 @@ class derivative_net(object):
 
         self.rtol = rtol
         self.atol = atol
-        self.lr = 0.0001
+        self.lr = 0.001
         self.momentum = 0.0  # 0.9
         self.gpu = False
         self.results_dir = 'results/'
 
-        self.network = Network(self.x_dim, self.y_dim)
-        self.optimizer = torch.optim.Adam(self.network.parameters())  # , lr=self.lr, momentum=self.momentum)
+        self.network = network_choice
+        self.optimizer = optimizer(self.network.parameters(), lr=self.lr)  # , lr=self.lr, momentum=self.momentum)
         if self.gpu:
             self.network = self.network.cuda()
 
@@ -72,9 +71,10 @@ class derivative_net(object):
                     self.rtol /= 2.0
                     print(f"Decaying atol, rtol to {self.atol}")
             train_loss = self.evaluate_dataset(self.train_dataset, epoch)
-            print(f"\nEpoch {epoch} train loss: {train_loss}")
+            print(f"Epoch {epoch} train loss: {train_loss}")
 
-        print(f"Final test loss: {self.evaluate_dataset(self.test_dataset, self.num_epochs, do_inverse=True)}")
+        test_loss = self.evaluate_dataset(self.test_dataset, self.num_epochs, do_inverse=self.do_inverse)
+        print(f"Final test loss: {test_loss}")
 
     def evaluate_dataset(self, dataset, epoch=0, do_inverse=False):
         filename = self.results_dir + self.save_name + "_graph_" + str(epoch) + ".csv"
@@ -91,7 +91,7 @@ class derivative_net(object):
 
         total_loss = total_loss / self.num_batches
         self.loss_csv_writer.writerow(["loss", str(total_loss)])
-        print("Average loss for Epoch ", epoch, "is", total_loss)
+        # print("Average loss for Epoch ", epoch, "is", total_loss)
         return total_loss
 
     def evaluate_batch(self, batch_data, csv_writer=None, do_inverse=False):
@@ -114,7 +114,6 @@ class derivative_net(object):
                 x_pred = odeint(InverseTimeDynamics(self.y_i, y, self.network),
                                 self.x_i, self.t, self.rtol, self.atol)[-1]
                 x_pred = x_pred[0].item()
-                print(f"y = {y}, x_pred = {x_pred}")
 
             csv_writer.writerow([str(x.item()), str(y.item()), str(y_pred.item()), str(x_pred)])
 
@@ -180,6 +179,7 @@ def init_ax():
     ax = fig.add_subplot(1, 1, 1)
     return fig, ax
 
+
 def setup_ax(ax):
     ax.legend(fancybox=True, borderaxespad=0.0, framealpha=0.0)
     ax.tick_params(axis='x', which='both', bottom=False, top=False)
@@ -189,8 +189,9 @@ def setup_ax(ax):
     ax.spines['top'].set_visible(False)
     return ax
 
-def plot_functions(test_name, num_epochs, rtol, atol):
-    fig, ax = setup_ax
+
+def plot_functions(test_name, num_epochs, rtol, atol, x_o):
+    fig, ax = init_ax()
 
     initial_x, initial_y, initial_y_pred, initial_x_pred = load_log('results/' + test_name + '_graph_-1.csv')
     final_x, final_y, final_y_pred, final_x_pred = load_log(
@@ -198,23 +199,47 @@ def plot_functions(test_name, num_epochs, rtol, atol):
 
     train_x, train_y, _, _ = load_log('results/' + test_name + '_graph_0.csv')
 
+    ax.axvline(x_o, linestyle='--', color='k', label='Initial Conditions')
+
     # Plot training data
-    ax.scatter(train_x, train_y, label='Train', c='k', s=mpl.rcParams['lines.markersize'] ** 2 * 1.25)
+    ax.scatter(train_x, train_y, label='Training Data', c='k', s=mpl.rcParams['lines.markersize'] ** 2 * 1.25)
 
     # Plot the true function
-    ax.plot(initial_x, initial_y, label='True', c='r')
+    ax.plot(initial_x, initial_y, label='True Function', c='r')
 
     # Plot the initial function
-    ax.plot(initial_x, initial_y_pred, label='Initial', c='g')
+    ax.plot(initial_x, initial_y_pred, label='Initial Learned Function', c='g')
     initial_y_error = np.abs(initial_y_pred) * rtol + atol
     ax.fill_between(initial_x, initial_y_pred + initial_y_error, initial_y_pred - initial_y_error,
                     color='g', alpha=0.2)
 
     # Plot the learned function
-    ax.plot(final_x, final_y_pred, label='Final', c='b')
+    ax.plot(final_x, final_y_pred, label='Final Learned Function', c='b')
     final_y_error = np.abs(final_y_pred) * rtol + atol
     ax.fill_between(final_x, final_y_pred + final_y_error, final_y_pred - final_y_error,
                     color='b', alpha=0.2)
+
+    ax = setup_ax(ax)
+    fig.savefig('results/' + test_name + '_plot_functions.png', bbox_inches='tight', dpi=200)
+    plt.close(fig)
+
+
+def plot_inverse_functions(test_name, num_epochs, rtol, atol, x_o):
+    fig, ax = init_ax()
+
+    initial_x, initial_y, initial_y_pred, initial_x_pred = load_log('results/' + test_name + '_graph_-1.csv')
+    final_x, final_y, final_y_pred, final_x_pred = load_log(
+        'results/' + test_name + '_graph_' + str(num_epochs) + '.csv')
+
+    train_x, train_y, _, _ = load_log('results/' + test_name + '_graph_0.csv')
+
+    ax.axhline(true_y_exp(x_o), linestyle='--', color='k', label='Initial Conditions')
+
+    # Plot training data
+    ax.scatter(train_y, train_x, label='Training Data', c='k', s=mpl.rcParams['lines.markersize'] ** 2 * 1.25)
+
+    # Plot the true function
+    ax.plot(initial_y, initial_x, label='True Function', c='r')
 
     # Plot the inverse
     zipped_inverse = zip(final_y, final_x_pred)
@@ -222,13 +247,13 @@ def plot_functions(test_name, num_epochs, rtol, atol):
     final_y = np.array([y for y, _ in sorted_zipped_inverse])
     final_x_pred = np.array([x_pred for _, x_pred in sorted_zipped_inverse])
 
-    ax.plot(final_x_pred, final_y, label='Final Inverse', c='y')
+    ax.plot(final_y, final_x_pred, label='Final Learned Inverse', c='y')
     final_x_error = np.abs(final_x_pred) * rtol + atol
-    ax.fill_betweenx(final_y, final_x_pred + final_x_error, final_x_pred - final_x_error,
+    ax.fill_between(final_y, final_x_pred + final_x_error, final_x_pred - final_x_error,
                      color='y', alpha=0.2)
 
     ax = setup_ax(ax)
-    fig.savefig('results/' + test_name + '_plot_functions.png', bbox_inches='tight', dpi=200)
+    fig.savefig('results/' + test_name + '_plot_inverse_functions.png', bbox_inches='tight', dpi=200)
     plt.close(fig)
 
 
@@ -240,23 +265,23 @@ def invertible_experiment_compute(num_epochs, rtol, atol):
     batch_size = num_train
     num_test = 100
 
-    scale = 3.0
-    shift = scale / 2.0
-
     # Create training data
-    x_train = torch.rand(num_train, 1) * scale - shift
+    x_train = torch.linspace(-1, 1, num_train).reshape(-1, 1)
     y_train = true_y_exp(torch.transpose(x_train, 0, 1))
     train_dataset = create_dataset(x_train, y_train, batch_size)
-    initial_c = (x_train[0], y_train[0])
+    x_o = torch.tensor([0.0])
+    initial_c = (x_o, true_y_exp(x_o))
 
     # Create testing data
-    x_test = torch.rand(num_test, 1) * scale - shift
+    x_test = torch.linspace(-1.5, 1.5, num_test).reshape(-1, 1)
     y_test = true_y_exp(torch.transpose(x_test, 0, 1))
     test_dataset = create_dataset(x_test, y_test, batch_size)
 
     # Create the network and train
-    deriv_net = derivative_net(x_dim, y_dim, initial_c, true_y_exp, train_dataset, test_dataset, num_train, num_test,
-                               batch_size, num_epochs, rtol, atol, save_name, Dynamics)
+    network_choice = Dynamics(x_dim, y_dim)
+    deriv_net = derivative_net(initial_c, true_y_exp, train_dataset, test_dataset, num_train, num_test,
+                               batch_size, num_epochs, rtol, atol, save_name, network_choice,
+                               optimizer=torch.optim.Adam, do_inverse=True)
     deriv_net.train()
     return deriv_net.rtol, deriv_net.atol
 
@@ -269,40 +294,47 @@ def lipschitz_experiment_compute(num_epochs, rtol, atol):
     batch_size = num_train
     num_test = 100
 
-    scale = 3.0
-    shift = scale / 2.0
-
     # Create training data.
-    x_train = torch.rand(num_train, 1) * scale - shift
+    x_train = torch.linspace(-1, 1, num_train).reshape(-1, 1)
     y_train = true_y_abs(torch.transpose(x_train, 0, 1))
     train_dataset = create_dataset(x_train, y_train, batch_size)
-    initial_c = (x_train[0], y_train[0])
+    x_o = torch.tensor([0.0])
+    initial_c = (x_o, true_y_abs(x_o))
 
     # Create testing data.
-    x_test = torch.rand(num_test, 1) * scale - shift
+    x_test = torch.linspace(-1.5, 1.5, num_test).reshape(-1, 1)
     y_test = true_y_abs(torch.transpose(x_test, 0, 1))
     test_dataset = create_dataset(x_test, y_test, batch_size)
 
     # Train the network.
-    deriv_net = derivative_net(x_dim, y_dim, initial_c, true_y_abs, train_dataset, test_dataset, num_train, num_test,
-                               batch_size, num_epochs, rtol, atol, save_name, OneParam)
+    network_choice = Dynamics(x_dim, y_dim, torch.tanh)
+    deriv_net = derivative_net(initial_c, true_y_abs, train_dataset, test_dataset, num_train, num_test,
+                               batch_size, num_epochs, rtol, atol, save_name, network_choice,
+                               optimizer=torch.optim.Adam, do_inverse=False)
     deriv_net.train()
     return deriv_net.rtol, deriv_net.atol
 
 
 def main(init_rtol, init_atol):
-    # TODO: Should change to argparse
-    num_epochs_lipschitz = 10
-    rtol_final_lipschitz, atol_final_lipschitz = lipschitz_experiment_compute(num_epochs_lipschitz,
-                                                                              init_rtol, init_atol)
-    plot_functions('lipschitz', num_epochs_lipschitz, rtol_final_lipschitz, atol_final_lipschitz)
+    rtol_final_lipschitz = rtol_final_invertible = init_rtol
+    atol_final_lipschitz = atol_final_invertible = init_atol
+    x_o = 0
 
+    # TODO: Should change to argparse
+    print("Beginning Lipschitz experiments...")
+    num_epochs_lipschitz = 100
+    #rtol_final_lipschitz, atol_final_lipschitz = lipschitz_experiment_compute(num_epochs_lipschitz, init_rtol, init_atol)
+    plot_functions('lipschitz', num_epochs_lipschitz, rtol_final_lipschitz, atol_final_lipschitz, x_o)
+
+    print("Beginning Invertibility experiments...")
     num_epochs_invertible = 100
-    rtol_final_invertible, atol_final_invertible = invertible_experiment_compute(num_epochs_invertible,
-                                                                                 init_rtol, init_atol)
-    plot_functions('invertible', num_epochs_invertible, rtol_final_invertible, atol_final_invertible)
+    #rtol_final_invertible, atol_final_invertible = invertible_experiment_compute(num_epochs_invertible, init_rtol, init_atol)
+    plot_functions('invertible', num_epochs_invertible, rtol_final_invertible, atol_final_invertible, x_o)
+    plot_inverse_functions('invertible', num_epochs_invertible, rtol_final_invertible, atol_final_invertible, x_o)
 
 
 if __name__ == "__main__":
-    init_rtol, init_atol = 1.0, 1.0
+    print("Beginning experiments...")
+    init_rtol, init_atol = 0.1, 0.1
     main(init_rtol, init_atol)
+    print("Finished!")
