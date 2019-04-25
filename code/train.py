@@ -4,14 +4,16 @@ import torch.utils.data
 import csv
 from tqdm import tqdm
 import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib as mpl
 
-from network import Dynamics as Network
+from network import Dynamics, OneParam
 from time_dynamics import TimeDynamics, InverseTimeDynamics
 
 
 class derivative_net(object):
     def __init__(self, x_dim, y_dim, initial_c, true_fcn, train_dataset, test_dataset, num_train, num_test, batch_size,
-                 num_epochs, rtol, atol, save_name):
+                 num_epochs, rtol, atol, save_name, network_choice):
         # TODO: This should be replaced with parser.args
         self.x_dim = x_dim
         self.y_dim = y_dim
@@ -64,10 +66,10 @@ class derivative_net(object):
                 self.optimizer.zero_grad()
                 loss.backward(retain_graph=True)
                 self.optimizer.step()
-                print(torch.abs(loss), self.atol + self.rtol * torch.max(torch.abs(batch_data[1])))
-                if torch.abs(loss) < self.atol + self.rtol * torch.max(torch.abs(batch_data[1])):
-                    self.atol /= 2
-                    self.rtol /= 2
+                # print(torch.abs(loss), self.atol + self.rtol * torch.max(torch.abs(batch_data[1])))
+                if torch.abs(loss) < (self.atol + self.rtol * torch.max(torch.abs(batch_data[1]))):
+                    self.atol /= 2.0
+                    self.rtol /= 2.0
                     print(f"Decaying atol, rtol to {self.atol}")
             train_loss = self.evaluate_dataset(self.train_dataset, epoch)
             print(f"\nEpoch {epoch} train loss: {train_loss}")
@@ -119,16 +121,23 @@ class derivative_net(object):
         return self.loss(y, y_pred)
 
 
-def true_y(x):
+def true_y_abs(x):
     """This gives true data points for training.
        This is the absolute value function
     :param x:
     :return:
     """
-    # print(f, "sum:{torch.sum(x, 0)}, max:{torch.max(x, 0)[0]}, abs:{torch.abs(x)[0]}")
-    # y = torch.abs(x)[0]  # torch.sum(torch.abs(x), 0)  #torch.max(x, 0)[0]
+    y = torch.abs(x)[0]
+    return y
+
+
+def true_y_exp(x):
+    """This gives true data points for training.
+       This is the exponential function.
+    :param x:
+    :return:
+    """
     y = torch.exp(x)[0]
-    # print("True Y Values: ", y)
     return y
 
 
@@ -157,16 +166,7 @@ def load_log(log_loc):
     return (x, y, y_pred, x_pred)
 
 
-def plot_functions(test_name, num_epochs, rtol, atol):
-    initial_x, initial_y, initial_y_pred, initial_x_pred = load_log('results/' + test_name + '_graph_-1.csv')
-    final_x, final_y, final_y_pred, final_x_pred = load_log(
-        'results/' + test_name + '_graph_' + str(num_epochs) + '.csv')
-
-    train_x, train_y, _, _ = load_log('results/' + test_name + '_graph_0.csv')
-
-    import matplotlib.pyplot as plt
-    import matplotlib as mpl
-
+def init_ax():
     # Set some parameters.
     font = {'family': 'Times New Roman'}
     mpl.rc('font', **font)
@@ -178,21 +178,45 @@ def plot_functions(test_name, num_epochs, rtol, atol):
 
     fig = plt.figure(figsize=(24, 16))
     ax = fig.add_subplot(1, 1, 1)
+    return fig, ax
 
+def setup_ax(ax):
+    ax.legend(fancybox=True, borderaxespad=0.0, framealpha=0.0)
+    ax.tick_params(axis='x', which='both', bottom=False, top=False)
+    ax.tick_params(axis='y', which='both', left=False, right=False)
+    ax.grid(False)
+    ax.spines['right'].set_visible(False)
+    ax.spines['top'].set_visible(False)
+    return ax
+
+def plot_functions(test_name, num_epochs, rtol, atol):
+    fig, ax = setup_ax
+
+    initial_x, initial_y, initial_y_pred, initial_x_pred = load_log('results/' + test_name + '_graph_-1.csv')
+    final_x, final_y, final_y_pred, final_x_pred = load_log(
+        'results/' + test_name + '_graph_' + str(num_epochs) + '.csv')
+
+    train_x, train_y, _, _ = load_log('results/' + test_name + '_graph_0.csv')
+
+    # Plot training data
     ax.scatter(train_x, train_y, label='Train', c='k', s=mpl.rcParams['lines.markersize'] ** 2 * 1.25)
 
+    # Plot the true function
     ax.plot(initial_x, initial_y, label='True', c='r')
 
+    # Plot the initial function
     ax.plot(initial_x, initial_y_pred, label='Initial', c='g')
     initial_y_error = np.abs(initial_y_pred) * rtol + atol
     ax.fill_between(initial_x, initial_y_pred + initial_y_error, initial_y_pred - initial_y_error,
                     color='g', alpha=0.2)
 
+    # Plot the learned function
     ax.plot(final_x, final_y_pred, label='Final', c='b')
     final_y_error = np.abs(final_y_pred) * rtol + atol
     ax.fill_between(final_x, final_y_pred + final_y_error, final_y_pred - final_y_error,
                     color='b', alpha=0.2)
 
+    # Plot the inverse
     zipped_inverse = zip(final_y, final_x_pred)
     sorted_zipped_inverse = sorted(zipped_inverse)
     final_y = np.array([y for y, _ in sorted_zipped_inverse])
@@ -203,46 +227,82 @@ def plot_functions(test_name, num_epochs, rtol, atol):
     ax.fill_betweenx(final_y, final_x_pred + final_x_error, final_x_pred - final_x_error,
                      color='y', alpha=0.2)
 
-    ax.legend(fancybox=True, borderaxespad=0.0, framealpha=0.0)
-    ax.tick_params(axis='x', which='both', bottom=False, top=False)
-    ax.tick_params(axis='y', which='both', left=False, right=False)
-    ax.grid(False)
-    ax.spines['right'].set_visible(False)
-    ax.spines['top'].set_visible(False)
+    ax = setup_ax(ax)
     fig.savefig('results/' + test_name + '_plot_functions.png', bbox_inches='tight', dpi=200)
+    plt.close(fig)
 
 
-def main(save_name, num_epochs, rtol, atol):
-    # TODO: Should change to argparse
+def invertible_experiment_compute(num_epochs, rtol, atol):
+    save_name = 'invertible'
     x_dim = 1
     y_dim = 1
     num_train = 20
-    batch_size = num_train  # // 2
+    batch_size = num_train
     num_test = 100
 
-    # generate samples between -2 and 2 using uniform distribution
     scale = 3.0
     shift = scale / 2.0
+
+    # Create training data
     x_train = torch.rand(num_train, 1) * scale - shift
-    y_train = true_y(torch.transpose(x_train, 0, 1))
+    y_train = true_y_exp(torch.transpose(x_train, 0, 1))
     train_dataset = create_dataset(x_train, y_train, batch_size)
     initial_c = (x_train[0], y_train[0])
 
+    # Create testing data
     x_test = torch.rand(num_test, 1) * scale - shift
-    y_test = true_y(torch.transpose(x_test, 0, 1))
+    y_test = true_y_exp(torch.transpose(x_test, 0, 1))
     test_dataset = create_dataset(x_test, y_test, batch_size)
 
-    deriv_net = derivative_net(x_dim, y_dim, initial_c, true_y, train_dataset, test_dataset, num_train, num_test,
-                               batch_size, num_epochs, rtol, atol, save_name=save_name)
+    # Create the network and train
+    deriv_net = derivative_net(x_dim, y_dim, initial_c, true_y_exp, train_dataset, test_dataset, num_train, num_test,
+                               batch_size, num_epochs, rtol, atol, save_name, Dynamics)
     deriv_net.train()
     return deriv_net.rtol, deriv_net.atol
 
-    # TODO: Need to plot true_y and predicted y over time?
+
+def lipschitz_experiment_compute(num_epochs, rtol, atol):
+    save_name = 'lipschitz'
+    x_dim = 1
+    y_dim = 1
+    num_train = 20
+    batch_size = num_train
+    num_test = 100
+
+    scale = 3.0
+    shift = scale / 2.0
+
+    # Create training data.
+    x_train = torch.rand(num_train, 1) * scale - shift
+    y_train = true_y_abs(torch.transpose(x_train, 0, 1))
+    train_dataset = create_dataset(x_train, y_train, batch_size)
+    initial_c = (x_train[0], y_train[0])
+
+    # Create testing data.
+    x_test = torch.rand(num_test, 1) * scale - shift
+    y_test = true_y_abs(torch.transpose(x_test, 0, 1))
+    test_dataset = create_dataset(x_test, y_test, batch_size)
+
+    # Train the network.
+    deriv_net = derivative_net(x_dim, y_dim, initial_c, true_y_abs, train_dataset, test_dataset, num_train, num_test,
+                               batch_size, num_epochs, rtol, atol, save_name, OneParam)
+    deriv_net.train()
+    return deriv_net.rtol, deriv_net.atol
+
+
+def main(init_rtol, init_atol):
+    # TODO: Should change to argparse
+    num_epochs_lipschitz = 10
+    rtol_final_lipschitz, atol_final_lipschitz = lipschitz_experiment_compute(num_epochs_lipschitz,
+                                                                              init_rtol, init_atol)
+    plot_functions('lipschitz', num_epochs_lipschitz, rtol_final_lipschitz, atol_final_lipschitz)
+
+    num_epochs_invertible = 100
+    rtol_final_invertible, atol_final_invertible = invertible_experiment_compute(num_epochs_invertible,
+                                                                                 init_rtol, init_atol)
+    plot_functions('invertible', num_epochs_invertible, rtol_final_invertible, atol_final_invertible)
 
 
 if __name__ == "__main__":
-    save_name = 'test_1'
-    num_epochs = 100
-    rtol, atol = 1.0, 1.0
-    rtol, atol = main(save_name, num_epochs, rtol, atol)
-    plot_functions('test_1', num_epochs, rtol, atol)
+    init_rtol, init_atol = 1.0, 1.0
+    main(init_rtol, init_atol)
