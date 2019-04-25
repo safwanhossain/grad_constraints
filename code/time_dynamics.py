@@ -4,6 +4,7 @@ import torch
 
 dtype = torch.float32
 
+
 class TimeDynamics(nn.Module):
     """
     Our goal is to compute y(x_f) = y(x_0) + \int{y'(c(t))c'(t)}. To do so, we'll use the odeint
@@ -39,13 +40,13 @@ class TimeDynamics(nn.Module):
         # compute the Input dynamics dy/dx
         curr_x = self.path(t)
         gradient_term = self.deriv_y(curr_x)
-        
+
         # compute path dynamics dx/dt
         path_derivative = torch.zeros(curr_x.shape[0], dtype=dtype)
         for index, entry in enumerate(curr_x):
             path_derivative[index] = torch.autograd.grad(entry, t, retain_graph=True)[0]  # t.grad
-        #path_derivative = torch.autograd.grad(curr_x, t, retain_graph=True)[0].reshape(1,) 
-        
+        # path_derivative = torch.autograd.grad(curr_x, t, retain_graph=True)[0].reshape(1,)
+
         # Finally, combine dy/dx and dx/dt to get dy/dt
         y_increment = gradient_term @ path_derivative
         return y_increment
@@ -55,11 +56,12 @@ def unit_test_1_1():
     """ Test for the learned function mapping from R to R
         Function is y = x^2
     """
+
     def test_dynamics(x):
         # x is a scalar
-        return 2*x
-    
-    x_vals = torch.tensor([0.0,1.0,2.0,3.0,4.0,5.0,6.0,7.0,8.0,9.0,10.0]).requires_grad_(True)
+        return 2 * x
+
+    x_vals = torch.tensor([0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]).requires_grad_(True)
     x_i = torch.tensor([0.0]).requires_grad_(True)
     y_i = torch.tensor([0.0]).requires_grad_(True)
     t = torch.linspace(.0, 1.0, 20).clone().detach().requires_grad_(True)
@@ -69,18 +71,19 @@ def unit_test_1_1():
     for index, val in enumerate(x_vals):
         approx_y[index] = odeint(TimeDynamics(x_i, val, test_dynamics), y_i, t, rtol, atol)[-1]
     real_y = torch.pow(x_vals, 2)
-    assert(torch.sum(torch.pow(approx_y-real_y, 2)).data < 0.0001)
+    assert (torch.sum(torch.pow(approx_y - real_y, 2)).data < 0.0001)
+
 
 def unit_test_n_1():
     """ Test for the learned function mapping from R^n to R
         Function is y = x_1^2 + x_2^2
     """
-    
+
     def test_dynamics(x):
         # x in an R^n vector
-        return 2*x.data
-    
-    x_vals = torch.tensor([[0,0], [0,1], [1,0], [1,2], [1,2], [3,2], [4,5]]).float().requires_grad_(True)
+        return 2 * x.data
+
+    x_vals = torch.tensor([[0, 0], [0, 1], [1, 0], [1, 2], [1, 2], [3, 2], [4, 5]]).float().requires_grad_(True)
     x_i = torch.tensor([0.0, 0.0]).requires_grad_(True)
     y_i = torch.tensor([0.0]).requires_grad_(True)
     t = torch.linspace(.0, 1.0, 20).clone().detach().requires_grad_(True)
@@ -90,19 +93,20 @@ def unit_test_n_1():
     for index, val in enumerate(x_vals):
         approx_y[index] = odeint(TimeDynamics(x_i, val, test_dynamics), y_i, t, rtol, atol)[-1]
     real_y = torch.sum(torch.pow(x_vals, 2), dim=1)
-    assert(torch.sum(torch.pow(approx_y-real_y, 2)).data < 0.0001)
+    assert (torch.sum(torch.pow(approx_y - real_y, 2)).data < 0.0001)
+
 
 def unit_test_n_n():
     """ Test for the learned function mapping from R^n to R^n
         Function is y_1 = x_1^2 + x_2^2
                     y_2 = x_1 + x_2
     """
-    
+
     def test_dynamics(x):
         # output should be a matrix
-        return torch.cat([2*x.data, torch.ones(2)]).reshape(2,2)
-    
-    x_vals = torch.tensor([[0,0], [0,1], [1,0], [1,2], [1,2], [3,2], [4,5]]).float().requires_grad_(True)
+        return torch.cat([2 * x.data, torch.ones(2)]).reshape(2, 2)
+
+    x_vals = torch.tensor([[0, 0], [0, 1], [1, 0], [1, 2], [1, 2], [3, 2], [4, 5]]).float().requires_grad_(True)
     x_i = torch.tensor([0.0, 0.0]).requires_grad_(True)
     y_i = torch.tensor([0.0, 0.0]).requires_grad_(True)
     t = torch.linspace(.0, 1.0, 20).clone().detach().requires_grad_(True)
@@ -112,14 +116,11 @@ def unit_test_n_n():
     for index, val in enumerate(x_vals):
         approx_y[index] = odeint(TimeDynamics(x_i, val, test_dynamics), y_i, t, rtol, atol)[-1]
     real_y = torch.transpose(torch.stack([torch.sum(torch.pow(x_vals, 2), dim=1), torch.sum(x_vals, dim=1)]), 0, 1)
-    assert(torch.sum(torch.pow(approx_y-real_y, 2)).data < 0.0001)
+    assert (torch.sum(torch.pow(approx_y - real_y, 2)).data < 0.0001)
+
 
 if __name__ == "__main__":
     unit_test_1_1()
     unit_test_n_1()
-    unit_test_n_n() 
+    unit_test_n_n()
     print("UNIT TESTS PASSED")
-
-
-
-
