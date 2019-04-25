@@ -37,7 +37,7 @@ class derivative_net(object):
 
         self.rtol = rtol
         self.atol = atol
-        self.lr = 0.001
+        self.lr = 0.01
         self.momentum = 0.0  # 0.9
         self.gpu = False
         self.results_dir = 'results/'
@@ -233,13 +233,13 @@ def plot_inverse_functions(test_name, num_epochs, rtol, atol, x_o):
 
     train_x, train_y, _, _ = load_log('results/' + test_name + '_graph_0.csv')
 
-    ax.axhline(true_y_exp(x_o), linestyle='--', color='k', label='Initial Conditions')
+    ax.axvline(true_y_exp(x_o), linestyle='--', color='k', label='Initial Conditions')
 
     # Plot training data
     ax.scatter(train_y, train_x, label='Training Data', c='k', s=mpl.rcParams['lines.markersize'] ** 2 * 1.25)
 
     # Plot the true function
-    ax.plot(initial_y, initial_x, label='True Function', c='r')
+    ax.plot(initial_y, initial_x, label='True Inverse Function', c='r')
 
     # Plot the inverse
     zipped_inverse = zip(final_y, final_x_pred)
@@ -257,7 +257,7 @@ def plot_inverse_functions(test_name, num_epochs, rtol, atol, x_o):
     plt.close(fig)
 
 
-def invertible_experiment_compute(num_epochs, rtol, atol):
+def invertible_experiment_compute(num_epochs, rtol, atol, x_o):
     save_name = 'invertible'
     x_dim = 1
     y_dim = 1
@@ -269,7 +269,6 @@ def invertible_experiment_compute(num_epochs, rtol, atol):
     x_train = torch.linspace(-1, 1, num_train).reshape(-1, 1)
     y_train = true_y_exp(torch.transpose(x_train, 0, 1))
     train_dataset = create_dataset(x_train, y_train, batch_size)
-    x_o = torch.tensor([0.0])
     initial_c = (x_o, true_y_exp(x_o))
 
     # Create testing data
@@ -286,7 +285,7 @@ def invertible_experiment_compute(num_epochs, rtol, atol):
     return deriv_net.rtol, deriv_net.atol
 
 
-def lipschitz_experiment_compute(num_epochs, rtol, atol):
+def lipschitz_experiment_compute(num_epochs, rtol, atol, x_o):
     save_name = 'lipschitz'
     x_dim = 1
     y_dim = 1
@@ -298,7 +297,6 @@ def lipschitz_experiment_compute(num_epochs, rtol, atol):
     x_train = torch.linspace(-1, 1, num_train).reshape(-1, 1)
     y_train = true_y_abs(torch.transpose(x_train, 0, 1))
     train_dataset = create_dataset(x_train, y_train, batch_size)
-    x_o = torch.tensor([0.0])
     initial_c = (x_o, true_y_abs(x_o))
 
     # Create testing data.
@@ -318,17 +316,17 @@ def lipschitz_experiment_compute(num_epochs, rtol, atol):
 def main(init_rtol, init_atol):
     rtol_final_lipschitz = rtol_final_invertible = init_rtol
     atol_final_lipschitz = atol_final_invertible = init_atol
-    x_o = 0
+    x_o = torch.tensor([0.0])
 
     # TODO: Should change to argparse
     print("Beginning Lipschitz experiments...")
     num_epochs_lipschitz = 100
-    #rtol_final_lipschitz, atol_final_lipschitz = lipschitz_experiment_compute(num_epochs_lipschitz, init_rtol, init_atol)
+    rtol_final_lipschitz, atol_final_lipschitz = lipschitz_experiment_compute(num_epochs_lipschitz, init_rtol, init_atol, x_o)
     plot_functions('lipschitz', num_epochs_lipschitz, rtol_final_lipschitz, atol_final_lipschitz, x_o)
 
     print("Beginning Invertibility experiments...")
     num_epochs_invertible = 100
-    #rtol_final_invertible, atol_final_invertible = invertible_experiment_compute(num_epochs_invertible, init_rtol, init_atol)
+    rtol_final_invertible, atol_final_invertible = invertible_experiment_compute(num_epochs_invertible, init_rtol, init_atol, x_o)
     plot_functions('invertible', num_epochs_invertible, rtol_final_invertible, atol_final_invertible, x_o)
     plot_inverse_functions('invertible', num_epochs_invertible, rtol_final_invertible, atol_final_invertible, x_o)
 
