@@ -222,7 +222,7 @@ def plot_loss(test_name):
     return rtols[-1], atols[-1]
 
 
-def plot_functions(test_name, num_epochs, rtol, atol, x_o):
+def plot_functions(test_name, num_epochs, rtol, atol, x_o, true_y):
     fig, ax = init_ax()
 
     initial_x, initial_y, initial_y_pred, initial_x_pred = load_log_plot('results/' + test_name + '_graph_-1.csv')
@@ -230,11 +230,6 @@ def plot_functions(test_name, num_epochs, rtol, atol, x_o):
         'results/' + test_name + '_graph_' + str(num_epochs) + '.csv')
 
     train_x, train_y, _, _ = load_log_plot('results/' + test_name + '_graph_0.csv')
-
-    ax.axvline(x_o, linestyle='--', color='k', label='Initial Conditions')
-
-    # Plot training data
-    ax.scatter(train_x, train_y, label='Training Data', c='k', s=mpl.rcParams['lines.markersize'] ** 2 * 1.25)
 
     # Plot the true function
     ax.plot(initial_x, initial_y, label='True Function', c='r')
@@ -251,6 +246,13 @@ def plot_functions(test_name, num_epochs, rtol, atol, x_o):
     ax.fill_between(final_x, final_y_pred + final_y_error, final_y_pred - final_y_error,
                     color='b', alpha=0.2)
 
+    ax.scatter(x_o, true_y(x_o), color='y', marker='*', label='Initial Conditions',
+               s=mpl.rcParams['lines.markersize']*8, zorder=10)
+
+    # Plot training data
+    ax.scatter(train_x, train_y, label='Training Data', c='k',
+               s=mpl.rcParams['lines.markersize']*2, zorder=10)
+
     ax = setup_ax(ax)
     fig.savefig('images/' + test_name + '_plot_functions.png', bbox_inches='tight', dpi=200)
     plt.close(fig)
@@ -265,11 +267,6 @@ def plot_inverse_functions(test_name, num_epochs, rtol, atol, x_o):
 
     train_x, train_y, _, _ = load_log_plot('results/' + test_name + '_graph_0.csv')
 
-    ax.axvline(true_y_exp(x_o), linestyle='--', color='k', label='Initial Conditions')
-
-    # Plot training data
-    ax.scatter(train_y, train_x, label='Training Data', c='k', s=mpl.rcParams['lines.markersize'] ** 2 * 1.25)
-
     # Plot the true function
     ax.plot(initial_y, initial_x, label='True Inverse Function', c='r')
 
@@ -279,10 +276,16 @@ def plot_inverse_functions(test_name, num_epochs, rtol, atol, x_o):
     final_y = np.array([y for y, _ in sorted_zipped_inverse])
     final_x_pred = np.array([x_pred for _, x_pred in sorted_zipped_inverse])
 
-    ax.plot(final_y, final_x_pred, label='Final Learned Inverse', c='y')
+    ax.plot(final_y, final_x_pred, label='Final Learned Inverse', c='g')
     final_x_error = np.abs(final_x_pred) * rtol + atol
     ax.fill_between(final_y, final_x_pred + final_x_error, final_x_pred - final_x_error,
                     color='y', alpha=0.2)
+
+    ax.scatter(true_y_exp(x_o), x_o, color='y', marker='*', label='Initial Conditions',
+               s=mpl.rcParams['lines.markersize']*8, zorder=10)
+
+    # Plot training data
+    # ax.scatter(train_y, train_x, label='Training Data', c='k', s=mpl.rcParams['lines.markersize'])
 
     ax = setup_ax(ax)
     fig.savefig('images/' + test_name + '_plot_inverse_functions.png', bbox_inches='tight', dpi=200)
@@ -309,7 +312,10 @@ def invertible_experiment_compute(num_epochs, rtol, atol, x_o):
     test_dataset = create_dataset(x_test, y_test, batch_size)
 
     # Create the network and train
-    network_choice = Dynamics(x_dim, y_dim, torch.nn.ELU())
+    epsilon = 0.0001
+    def square(x):
+        return x ** 2 + epsilon
+    network_choice = Dynamics(x_dim, y_dim, square)
     deriv_net = derivative_net(initial_c, true_y_exp, train_dataset, test_dataset, num_train, num_test,
                                batch_size, num_epochs, rtol, atol, save_name, network_choice,
                                optimizer=torch.optim.Adam, do_inverse=True)
@@ -349,15 +355,15 @@ def main(init_rtol, init_atol):
     # TODO: Should change to argparse
     print("Beginning Lipschitz experiments...")
     num_epochs_lipschitz = 100
-    lipschitz_experiment_compute(num_epochs_lipschitz, init_rtol, init_atol, x_o)
-    rtol_final_lipschitz, atol_final_lipschitz = plot_loss('lipschitz')
-    plot_functions('lipschitz', num_epochs_lipschitz, rtol_final_lipschitz, atol_final_lipschitz, x_o)
+    #lipschitz_experiment_compute(num_epochs_lipschitz, init_rtol, init_atol, x_o)
+    #rtol_final_lipschitz, atol_final_lipschitz = plot_loss('lipschitz')
+    #plot_functions('lipschitz', num_epochs_lipschitz, rtol_final_lipschitz, atol_final_lipschitz, x_o, true_y_abs)
 
     print("Beginning Invertibility experiments...")
     num_epochs_invertible = 100
     invertible_experiment_compute(num_epochs_invertible, init_rtol, init_atol, x_o)
     rtol_final_invertible, atol_final_invertible = plot_loss('invertible')
-    plot_functions('invertible', num_epochs_invertible, rtol_final_invertible, atol_final_invertible, x_o)
+    plot_functions('invertible', num_epochs_invertible, rtol_final_invertible, atol_final_invertible, x_o, true_y_exp)
     plot_inverse_functions('invertible', num_epochs_invertible, rtol_final_invertible, atol_final_invertible, x_o)
 
 

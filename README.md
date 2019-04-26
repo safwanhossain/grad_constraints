@@ -2,7 +2,13 @@
 
 ## TODO
 
-* 
+* Write the README
+* Setup instructions
+* How to run experiments
+* How to view raw data
+* How to view plots
+* Add a copy of the paper?
+* More interesting examples to learn?
 
 
 ## Getting Started
