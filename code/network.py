@@ -38,8 +38,8 @@ class Dynamics(nn.Module):
             nn.Linear(xdim, self.d),
             torch.nn.LeakyReLU(),
 
-            nn.Linear(self.d, self.d),
-            torch.nn.LeakyReLU(),
+            #nn.Linear(self.d, self.d),
+            #torch.nn.LeakyReLU(),
 
             nn.Linear(self.d, xdim * ydim)
         )

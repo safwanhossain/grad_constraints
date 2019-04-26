@@ -68,7 +68,7 @@ class derivative_net(object):
                 self.optimizer.step()
 
                 y_mag = torch.max(torch.abs(batch_data[1]))
-                self.loss_csv_writer.writerow([str(loss.item()), self.atol, self.rtol, y_mag])
+                self.loss_csv_writer.writerow([str(torch.abs(loss).item()), self.atol, self.rtol, str(y_mag.item())])
                 if torch.abs(loss) < (self.atol + self.rtol * y_mag):
                     self.atol /= 2.0
                     self.rtol /= 2.0
@@ -175,9 +175,9 @@ def load_log_loss(log_loc):
             components = line.split(',')
             assert len(components) == 4
             data['losses'] += [float(components[0])]
-            data['rtols'] += [float(components[1])]
-            data['atols'] += [float(components[2])]
-            data['y_mags'] += [float(components[2])]
+            data['atols'] += [float(components[1])]
+            data['rtols'] += [float(components[2])]
+            data['y_mags'] += [float(components[3])]
 
     return np.array(data['losses']), np.array(data['rtols']), np.array(data['atols']), np.array(data['y_mags'])
 
@@ -355,9 +355,9 @@ def main(init_rtol, init_atol):
     # TODO: Should change to argparse
     print("Beginning Lipschitz experiments...")
     num_epochs_lipschitz = 100
-    #lipschitz_experiment_compute(num_epochs_lipschitz, init_rtol, init_atol, x_o)
-    #rtol_final_lipschitz, atol_final_lipschitz = plot_loss('lipschitz')
-    #plot_functions('lipschitz', num_epochs_lipschitz, rtol_final_lipschitz, atol_final_lipschitz, x_o, true_y_abs)
+    lipschitz_experiment_compute(num_epochs_lipschitz, init_rtol, init_atol, x_o)
+    rtol_final_lipschitz, atol_final_lipschitz = plot_loss('lipschitz')
+    plot_functions('lipschitz', num_epochs_lipschitz, rtol_final_lipschitz, atol_final_lipschitz, x_o, true_y_abs)
 
     print("Beginning Invertibility experiments...")
     num_epochs_invertible = 100
