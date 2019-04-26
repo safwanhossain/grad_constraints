@@ -85,11 +85,11 @@ class InverseTimeDynamics(nn.Module):
         """
         curr_y = self.path(t).reshape(-1, 1)
 
-        gradient_term = self.deriv_y(x)
+        gradient_term = self.deriv_y(x).reshape(-1, 1)  # TODO: Should this be a square?
         damping_scale = 0.00001
-        damping_x = torch.randn(x.shape).reshape(-1, 1)*damping_scale
-        damping_y = torch.randn(curr_y.shape).reshape(-1, 1)*damping_scale
-        inverse_gradient_term = torch.pinverse(gradient_term + damping_x @ damping_y)  # TODO: Add damping?
+        # damping_x = torch.randn(x.shape).reshape(-1, 1)*damping_scale
+        # damping_y = torch.randn(curr_y.shape).reshape(-1, 1)*damping_scale
+        inverse_gradient_term = torch.pinverse(gradient_term) # + damping_x @ damping_y)  # TODO: Add damping?
 
 
 

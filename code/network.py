@@ -46,10 +46,10 @@ class Dynamics(nn.Module):
 
     def forward(self, x):
         out = self.linear_layers(x)
-        out = out.view(-1, self.ydim, self.xdim)
+        #out = out.view(-1, self.ydim, self.xdim)
         if self.final_activation is not None:
             out = self.final_activation(out)
-        return out.reshape(self.ydim, )
+        return out.reshape(-1,)#self.ydim,)
 
 
 def unit_test():

@@ -47,7 +47,7 @@ class derivative_net(object):
         if self.gpu:
             self.network = self.network.cuda()
 
-        loss_file = self.results_dir + "loss.csv"
+        loss_file = self.results_dir + self.save_name + "_loss.csv"
         loss_csv_file = open(loss_file, mode='w')
         self.loss_csv_writer = csv.writer(loss_csv_file, delimiter=',')
 
@@ -55,7 +55,8 @@ class derivative_net(object):
         return (y_pred - y) ** 2
 
     def train(self):
-        print(f"Initial test loss: {self.evaluate_dataset(self.test_dataset, -1)}")
+        print(f"Initial test loss: {self.evaluate_dataset(self.test_dataset, -1, write_csv=False)}")
+        print(f"Epoch {0} train loss: {self.evaluate_dataset(self.train_dataset, 0, write_csv=True)}")
         for epoch in range(self.num_epochs):
             for batch_num, batch_data in enumerate(self.train_dataset):  # tqdm(, total=self.num_batches):
 
@@ -70,27 +71,30 @@ class derivative_net(object):
                     self.atol /= 2.0
                     self.rtol /= 2.0
                     print(f"Decaying atol, rtol to {self.atol}")
-            train_loss = self.evaluate_dataset(self.train_dataset, epoch)
+            train_loss = self.evaluate_dataset(self.train_dataset, epoch + 1, write_csv=True)
             print(f"Epoch {epoch} train loss: {train_loss}")
 
-        test_loss = self.evaluate_dataset(self.test_dataset, self.num_epochs, do_inverse=self.do_inverse)
+        test_loss = self.evaluate_dataset(self.test_dataset, self.num_epochs, do_inverse=self.do_inverse, write_csv=False)
         print(f"Final test loss: {test_loss}")
 
-    def evaluate_dataset(self, dataset, epoch=0, do_inverse=False):
+    def evaluate_dataset(self, dataset, epoch=0, do_inverse=False, write_csv=False):
         filename = self.results_dir + self.save_name + "_graph_" + str(epoch) + ".csv"
         csv_file = open(filename, mode='w')
         csv_writer = csv.writer(csv_file, delimiter=',')
 
         total_loss = float('inf')
+        y_size = 0
         for batch_num, batch_data in enumerate(dataset):  # tqdm(, total=self.num_batches):
             batch_loss = self.evaluate_batch(batch_data, csv_writer, do_inverse)
             if batch_num == 0:
+                y_size = torch.max(torch.abs(batch_data[1]))
                 total_loss = batch_loss
             else:
                 total_loss += batch_loss
 
         total_loss = total_loss / self.num_batches
-        self.loss_csv_writer.writerow(["loss", str(total_loss)])
+        if write_csv:
+            self.loss_csv_writer.writerow([str(total_loss.item()), self.atol, self.rtol, y_size])
         # print("Average loss for Epoch ", epoch, "is", total_loss)
         return total_loss
 
@@ -145,7 +149,7 @@ def create_dataset(train_x, train_y, batch_size):
     return torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=True, drop_last=True, pin_memory=True)
 
 
-def load_log(log_loc):
+def load_log_plot(log_loc):
     data = {'x': [], 'y': [], 'y_pred': [], 'x_pred': []}
     with open(log_loc, 'r') as f:
         for line in f:
@@ -164,18 +168,31 @@ def load_log(log_loc):
     x_pred = np.array([x_pred for _, _, _, x_pred in sorted_zipped_data])
     return (x, y, y_pred, x_pred)
 
+def load_log_loss(log_loc):
+    data = {'losses': [], 'rtols': [], 'atols': [], 'y_mags': []}
+    with open(log_loc, 'r') as f:
+        for line in f:
+            components = line.split(',')
+            assert len(components) == 4
+            data['losses'] += [float(components[0])]
+            data['rtols'] += [float(components[1])]
+            data['atols'] += [float(components[2])]
+            data['y_mags'] += [float(components[2])]
+
+    return np.array(data['losses']), np.array(data['rtols']), np.array(data['atols']), np.array(data['y_mags'])
+
 
 def init_ax():
     # Set some parameters.
     font = {'family': 'Times New Roman'}
     mpl.rc('font', **font)
-    mpl.rcParams['legend.fontsize'] = 25
-    mpl.rcParams['axes.labelsize'] = 25
-    mpl.rcParams['xtick.labelsize'] = 25
-    mpl.rcParams['ytick.labelsize'] = 25
+    mpl.rcParams['legend.fontsize'] = 12
+    mpl.rcParams['axes.labelsize'] = 12
+    mpl.rcParams['xtick.labelsize'] = 12
+    mpl.rcParams['ytick.labelsize'] = 12
     mpl.rcParams['axes.grid'] = True
 
-    fig = plt.figure(figsize=(24, 16))
+    fig = plt.figure(figsize=(6.4, 4.8))
     ax = fig.add_subplot(1, 1, 1)
     return fig, ax
 
@@ -189,15 +206,27 @@ def setup_ax(ax):
     ax.spines['top'].set_visible(False)
     return ax
 
+def plot_loss(test_name):
+    fig, ax = init_ax()
+    losses, rtols, atols, y_mags = load_log_loss('results/' + test_name + '_loss.csv')
+
+    iterations = range(len(losses))
+    ax.semilogy(iterations, losses, c='r', label='Training Loss')
+    ax.semilogy(iterations, atols + rtols*y_mags, c='g', label='Tolerance')
+
+    ax = setup_ax(ax)
+    fig.savefig('results/' + test_name + '_plot_losses.png', bbox_inches='tight', dpi=200)
+    plt.close(fig)
+    return rtols[-1], atols[-1]
 
 def plot_functions(test_name, num_epochs, rtol, atol, x_o):
     fig, ax = init_ax()
 
-    initial_x, initial_y, initial_y_pred, initial_x_pred = load_log('results/' + test_name + '_graph_-1.csv')
-    final_x, final_y, final_y_pred, final_x_pred = load_log(
+    initial_x, initial_y, initial_y_pred, initial_x_pred = load_log_plot('results/' + test_name + '_graph_-1.csv')
+    final_x, final_y, final_y_pred, final_x_pred = load_log_plot(
         'results/' + test_name + '_graph_' + str(num_epochs) + '.csv')
 
-    train_x, train_y, _, _ = load_log('results/' + test_name + '_graph_0.csv')
+    train_x, train_y, _, _ = load_log_plot('results/' + test_name + '_graph_0.csv')
 
     ax.axvline(x_o, linestyle='--', color='k', label='Initial Conditions')
 
@@ -227,11 +256,11 @@ def plot_functions(test_name, num_epochs, rtol, atol, x_o):
 def plot_inverse_functions(test_name, num_epochs, rtol, atol, x_o):
     fig, ax = init_ax()
 
-    initial_x, initial_y, initial_y_pred, initial_x_pred = load_log('results/' + test_name + '_graph_-1.csv')
-    final_x, final_y, final_y_pred, final_x_pred = load_log(
+    initial_x, initial_y, initial_y_pred, initial_x_pred = load_log_plot('results/' + test_name + '_graph_-1.csv')
+    final_x, final_y, final_y_pred, final_x_pred = load_log_plot(
         'results/' + test_name + '_graph_' + str(num_epochs) + '.csv')
 
-    train_x, train_y, _, _ = load_log('results/' + test_name + '_graph_0.csv')
+    train_x, train_y, _, _ = load_log_plot('results/' + test_name + '_graph_0.csv')
 
     ax.axvline(true_y_exp(x_o), linestyle='--', color='k', label='Initial Conditions')
 
@@ -277,12 +306,11 @@ def invertible_experiment_compute(num_epochs, rtol, atol, x_o):
     test_dataset = create_dataset(x_test, y_test, batch_size)
 
     # Create the network and train
-    network_choice = Dynamics(x_dim, y_dim)
+    network_choice = Dynamics(x_dim, y_dim, torch.nn.ELU())
     deriv_net = derivative_net(initial_c, true_y_exp, train_dataset, test_dataset, num_train, num_test,
                                batch_size, num_epochs, rtol, atol, save_name, network_choice,
                                optimizer=torch.optim.Adam, do_inverse=True)
     deriv_net.train()
-    return deriv_net.rtol, deriv_net.atol
 
 
 def lipschitz_experiment_compute(num_epochs, rtol, atol, x_o):
@@ -310,7 +338,6 @@ def lipschitz_experiment_compute(num_epochs, rtol, atol, x_o):
                                batch_size, num_epochs, rtol, atol, save_name, network_choice,
                                optimizer=torch.optim.Adam, do_inverse=False)
     deriv_net.train()
-    return deriv_net.rtol, deriv_net.atol
 
 
 def main(init_rtol, init_atol):
@@ -320,15 +347,18 @@ def main(init_rtol, init_atol):
 
     # TODO: Should change to argparse
     print("Beginning Lipschitz experiments...")
-    num_epochs_lipschitz = 100
-    rtol_final_lipschitz, atol_final_lipschitz = lipschitz_experiment_compute(num_epochs_lipschitz, init_rtol, init_atol, x_o)
+    num_epochs_lipschitz = 10
+    lipschitz_experiment_compute(num_epochs_lipschitz, init_rtol, init_atol, x_o)
+    rtol_final_lipschitz, atol_final_lipschitz = plot_loss('lipschitz')
     plot_functions('lipschitz', num_epochs_lipschitz, rtol_final_lipschitz, atol_final_lipschitz, x_o)
 
     print("Beginning Invertibility experiments...")
-    num_epochs_invertible = 100
-    rtol_final_invertible, atol_final_invertible = invertible_experiment_compute(num_epochs_invertible, init_rtol, init_atol, x_o)
+    num_epochs_invertible = 10
+    invertible_experiment_compute(num_epochs_invertible, init_rtol, init_atol, x_o)
+    rtol_final_invertible, atol_final_invertible = plot_loss('invertible')
     plot_functions('invertible', num_epochs_invertible, rtol_final_invertible, atol_final_invertible, x_o)
     plot_inverse_functions('invertible', num_epochs_invertible, rtol_final_invertible, atol_final_invertible, x_o)
+
 
 
 if __name__ == "__main__":
