@@ -105,5 +105,4 @@ venv.bak/
 
 *.xml
 .idea/*
-results/*.csv
-results/*.png
+code/results/*.csv

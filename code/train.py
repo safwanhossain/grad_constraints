@@ -66,15 +66,18 @@ class derivative_net(object):
                 self.optimizer.zero_grad()
                 loss.backward(retain_graph=True)
                 self.optimizer.step()
-                # print(torch.abs(loss), self.atol + self.rtol * torch.max(torch.abs(batch_data[1])))
-                if torch.abs(loss) < (self.atol + self.rtol * torch.max(torch.abs(batch_data[1]))):
+
+                y_mag = torch.max(torch.abs(batch_data[1]))
+                self.loss_csv_writer.writerow([str(loss.item()), self.atol, self.rtol, y_mag])
+                if torch.abs(loss) < (self.atol + self.rtol * y_mag):
                     self.atol /= 2.0
                     self.rtol /= 2.0
                     print(f"Decaying atol, rtol to {self.atol}")
             train_loss = self.evaluate_dataset(self.train_dataset, epoch + 1, write_csv=True)
             print(f"Epoch {epoch} train loss: {train_loss}")
 
-        test_loss = self.evaluate_dataset(self.test_dataset, self.num_epochs, do_inverse=self.do_inverse, write_csv=False)
+        test_loss = self.evaluate_dataset(self.test_dataset, self.num_epochs, do_inverse=self.do_inverse,
+                                          write_csv=False)
         print(f"Final test loss: {test_loss}")
 
     def evaluate_dataset(self, dataset, epoch=0, do_inverse=False, write_csv=False):
@@ -83,18 +86,14 @@ class derivative_net(object):
         csv_writer = csv.writer(csv_file, delimiter=',')
 
         total_loss = float('inf')
-        y_size = 0
         for batch_num, batch_data in enumerate(dataset):  # tqdm(, total=self.num_batches):
             batch_loss = self.evaluate_batch(batch_data, csv_writer, do_inverse)
             if batch_num == 0:
-                y_size = torch.max(torch.abs(batch_data[1]))
                 total_loss = batch_loss
             else:
                 total_loss += batch_loss
 
         total_loss = total_loss / self.num_batches
-        if write_csv:
-            self.loss_csv_writer.writerow([str(total_loss.item()), self.atol, self.rtol, y_size])
         # print("Average loss for Epoch ", epoch, "is", total_loss)
         return total_loss
 
@@ -168,6 +167,7 @@ def load_log_plot(log_loc):
     x_pred = np.array([x_pred for _, _, _, x_pred in sorted_zipped_data])
     return (x, y, y_pred, x_pred)
 
+
 def load_log_loss(log_loc):
     data = {'losses': [], 'rtols': [], 'atols': [], 'y_mags': []}
     with open(log_loc, 'r') as f:
@@ -186,10 +186,11 @@ def init_ax():
     # Set some parameters.
     font = {'family': 'Times New Roman'}
     mpl.rc('font', **font)
-    mpl.rcParams['legend.fontsize'] = 12
-    mpl.rcParams['axes.labelsize'] = 12
-    mpl.rcParams['xtick.labelsize'] = 12
-    mpl.rcParams['ytick.labelsize'] = 12
+    fontsize = 16
+    mpl.rcParams['legend.fontsize'] = fontsize
+    mpl.rcParams['axes.labelsize'] = fontsize
+    mpl.rcParams['xtick.labelsize'] = fontsize
+    mpl.rcParams['ytick.labelsize'] = fontsize
     mpl.rcParams['axes.grid'] = True
 
     fig = plt.figure(figsize=(6.4, 4.8))
@@ -206,18 +207,20 @@ def setup_ax(ax):
     ax.spines['top'].set_visible(False)
     return ax
 
+
 def plot_loss(test_name):
     fig, ax = init_ax()
     losses, rtols, atols, y_mags = load_log_loss('results/' + test_name + '_loss.csv')
 
     iterations = range(len(losses))
     ax.semilogy(iterations, losses, c='r', label='Training Loss')
-    ax.semilogy(iterations, atols + rtols*y_mags, c='g', label='Tolerance')
+    ax.semilogy(iterations, atols + rtols * y_mags, c='g', label='Tolerance')
 
     ax = setup_ax(ax)
-    fig.savefig('results/' + test_name + '_plot_losses.png', bbox_inches='tight', dpi=200)
+    fig.savefig('images/' + test_name + '_plot_losses.png', bbox_inches='tight', dpi=200)
     plt.close(fig)
     return rtols[-1], atols[-1]
+
 
 def plot_functions(test_name, num_epochs, rtol, atol, x_o):
     fig, ax = init_ax()
@@ -249,7 +252,7 @@ def plot_functions(test_name, num_epochs, rtol, atol, x_o):
                     color='b', alpha=0.2)
 
     ax = setup_ax(ax)
-    fig.savefig('results/' + test_name + '_plot_functions.png', bbox_inches='tight', dpi=200)
+    fig.savefig('images/' + test_name + '_plot_functions.png', bbox_inches='tight', dpi=200)
     plt.close(fig)
 
 
@@ -279,10 +282,10 @@ def plot_inverse_functions(test_name, num_epochs, rtol, atol, x_o):
     ax.plot(final_y, final_x_pred, label='Final Learned Inverse', c='y')
     final_x_error = np.abs(final_x_pred) * rtol + atol
     ax.fill_between(final_y, final_x_pred + final_x_error, final_x_pred - final_x_error,
-                     color='y', alpha=0.2)
+                    color='y', alpha=0.2)
 
     ax = setup_ax(ax)
-    fig.savefig('results/' + test_name + '_plot_inverse_functions.png', bbox_inches='tight', dpi=200)
+    fig.savefig('images/' + test_name + '_plot_inverse_functions.png', bbox_inches='tight', dpi=200)
     plt.close(fig)
 
 
@@ -341,28 +344,25 @@ def lipschitz_experiment_compute(num_epochs, rtol, atol, x_o):
 
 
 def main(init_rtol, init_atol):
-    rtol_final_lipschitz = rtol_final_invertible = init_rtol
-    atol_final_lipschitz = atol_final_invertible = init_atol
     x_o = torch.tensor([0.0])
 
     # TODO: Should change to argparse
     print("Beginning Lipschitz experiments...")
-    num_epochs_lipschitz = 10
+    num_epochs_lipschitz = 100
     lipschitz_experiment_compute(num_epochs_lipschitz, init_rtol, init_atol, x_o)
     rtol_final_lipschitz, atol_final_lipschitz = plot_loss('lipschitz')
     plot_functions('lipschitz', num_epochs_lipschitz, rtol_final_lipschitz, atol_final_lipschitz, x_o)
 
     print("Beginning Invertibility experiments...")
-    num_epochs_invertible = 10
+    num_epochs_invertible = 100
     invertible_experiment_compute(num_epochs_invertible, init_rtol, init_atol, x_o)
     rtol_final_invertible, atol_final_invertible = plot_loss('invertible')
     plot_functions('invertible', num_epochs_invertible, rtol_final_invertible, atol_final_invertible, x_o)
     plot_inverse_functions('invertible', num_epochs_invertible, rtol_final_invertible, atol_final_invertible, x_o)
 
 
-
 if __name__ == "__main__":
     print("Beginning experiments...")
-    init_rtol, init_atol = 0.1, 0.1
+    init_rtol, init_atol = 1.0, 1.0
     main(init_rtol, init_atol)
     print("Finished!")
