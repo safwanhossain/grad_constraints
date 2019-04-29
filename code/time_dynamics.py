@@ -83,9 +83,9 @@ class InverseTimeDynamics(nn.Module):
         :param t: array of time instances at which to compute dynamics for
         :return:
         """
-        curr_y = self.path(t).reshape(-1, 1)
+        curr_y = self.path(t) #.reshape(-1, 1)
 
-        gradient_term = self.deriv_y(x).reshape(-1, 1)  # TODO: Should this be a square?
+        gradient_term = self.deriv_y(x) #.reshape(-1, 1)  # TODO: Should this be a square?
         damping_scale = 0.00001
         # damping_x = torch.randn(x.shape).reshape(-1, 1)*damping_scale
         # damping_y = torch.randn(curr_y.shape).reshape(-1, 1)*damping_scale
