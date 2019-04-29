@@ -20,6 +20,7 @@ class TimeDynamics(nn.Module):
         super(TimeDynamics, self).__init__()
         self.deriv_y = deriv_y
         self.x_i, self.x_f = x_i, x_f
+        self.direction = self.x_f - self.x_i
 
         def path(t):
             """ For now, consider a straight line between x_i and x_f
@@ -42,9 +43,10 @@ class TimeDynamics(nn.Module):
         gradient_term = self.deriv_y(curr_x)
 
         # compute path dynamics dx/dt
-        path_derivative = torch.zeros(curr_x.shape[0], dtype=dtype)
-        for index, entry in enumerate(curr_x):
-            path_derivative[index] = torch.autograd.grad(entry, t, retain_graph=True)[0]  # t.grad
+        path_derivative = self.direction
+        #path_derivative = torch.zeros(curr_x.shape[0], dtype=dtype)
+        #for index, entry in enumerate(curr_x):
+        #    path_derivative[index] = self.direction  #torch.autograd.grad(entry, t, retain_graph=True)[0]  # t.grad
         # path_derivative = torch.autograd.grad(curr_x, t, retain_graph=True)[0].reshape(1,)
 
         # Finally, combine dy/dx and dx/dt to get dy/dt
@@ -66,6 +68,7 @@ class InverseTimeDynamics(nn.Module):
         super(InverseTimeDynamics, self).__init__()
         self.deriv_y = deriv_y
         self.y_i, self.y_f = y_i, y_f
+        self.direction = self.y_f - self.y_i
 
         def path(t):
             """ For now, consider a straight line between x_i and x_f
@@ -86,16 +89,16 @@ class InverseTimeDynamics(nn.Module):
         curr_y = self.path(t) #.reshape(-1, 1)
 
         gradient_term = self.deriv_y(x) #.reshape(-1, 1)  # TODO: Should this be a square?
-        damping_scale = 0.00001
+        # damping_scale = 0.00001
         # damping_x = torch.randn(x.shape).reshape(-1, 1)*damping_scale
         # damping_y = torch.randn(curr_y.shape).reshape(-1, 1)*damping_scale
         inverse_gradient_term = torch.pinverse(gradient_term) # + damping_x @ damping_y)  # TODO: Add damping?
 
 
-
-        path_derivative = torch.zeros(curr_y.shape[0], dtype=dtype)
-        for index, entry in enumerate(curr_y):
-            path_derivative[index] = torch.autograd.grad(entry, t, retain_graph=True)[0]
+        path_derivative = self.direction
+        #path_derivative = torch.zeros(curr_y.shape[0], dtype=dtype)
+        #for index, entry in enumerate(curr_y):
+        #    path_derivative[index] = torch.autograd.grad(entry, t, retain_graph=True)[0]
 
         x_increment = inverse_gradient_term @ path_derivative
         return x_increment

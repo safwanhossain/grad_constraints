@@ -37,7 +37,7 @@ class derivative_net(object):
 
         self.rtol = rtol
         self.atol = atol
-        self.lr = 0.01
+        self.lr = 0.0001
         self.momentum = 0.0  # 0.9
         self.gpu = False
         self.results_dir = 'results/'
@@ -55,8 +55,9 @@ class derivative_net(object):
         return torch.sum((y_pred - y) ** 2)
 
     def train(self):
-        print(f"Initial test loss: {self.evaluate_dataset(self.test_dataset, -1, write_csv=False)}")
-        print(f"Epoch {0} train loss: {self.evaluate_dataset(self.train_dataset, 0, write_csv=True)}")
+        with torch.no_grad():
+            print(f"Initial test loss: {self.evaluate_dataset(self.test_dataset, -1, write_csv=False)}")
+            print(f"Epoch {0} train loss: {self.evaluate_dataset(self.train_dataset, 0, write_csv=True)}")
         for epoch in range(self.num_epochs):
             for batch_num, batch_data in enumerate(self.train_dataset):  # tqdm(, total=self.num_batches):
 
@@ -64,21 +65,23 @@ class derivative_net(object):
                 loss = self.evaluate_batch(batch_data)
 
                 self.optimizer.zero_grad()
-                loss.backward(retain_graph=True)
+                loss.backward()  #retain_graph=True)
                 self.optimizer.step()
 
-                y_mag = torch.max(torch.abs(batch_data[1]))
+                y_mag = torch.max(torch.sum(torch.abs(batch_data[1]), dim=0))
                 self.loss_csv_writer.writerow([str(torch.abs(loss).item()), self.atol, self.rtol, str(y_mag.item())])
                 if torch.abs(loss) < (self.atol + self.rtol * y_mag):
                     self.atol /= 2.0
                     self.rtol /= 2.0
                     print(f"Decaying atol, rtol to {self.atol}")
-            train_loss = self.evaluate_dataset(self.train_dataset, epoch + 1, write_csv=True)
-            print(f"Epoch {epoch} train loss: {train_loss}")
+            with torch.no_grad():
+                train_loss = self.evaluate_dataset(self.train_dataset, epoch + 1, write_csv=True)
+                print(f"Epoch {epoch} train loss: {train_loss}")
 
-        test_loss = self.evaluate_dataset(self.test_dataset, self.num_epochs, do_inverse=self.do_inverse,
-                                          write_csv=False)
-        print(f"Final test loss: {test_loss}")
+        with torch.no_grad():
+            test_loss = self.evaluate_dataset(self.test_dataset, self.num_epochs, do_inverse=self.do_inverse,
+                                              write_csv=False)
+            print(f"Final test loss: {test_loss}")
 
     def evaluate_dataset(self, dataset, epoch=0, do_inverse=False, write_csv=False):
         filename = self.results_dir + self.save_name + "_graph_" + str(epoch) + ".csv"
@@ -116,7 +119,7 @@ class derivative_net(object):
             if do_inverse:
                 x_pred = odeint(InverseTimeDynamics(self.y_i, y, self.network),
                                 self.x_i, self.t, self.rtol, self.atol)[-1]
-                x_pred = x_pred[0].item()
+                #  x_pred = x_pred[0].item()
             csv_writer.writerow([str([val.item() for val in x]),
                                  str([val.item() for val in y]),
                                  str([val.item() for val in y_pred]),
@@ -358,11 +361,11 @@ def lipschitz_experiment_compute(num_epochs, rtol, atol, x_o):
 
 def high_dim_invertible_experiment_compute(num_epochs, rtol, atol):
     save_name = 'high_dim_invertible'
-    x_dim = 2
-    y_dim = 2
+    x_dim = 784  # 2
+    y_dim = 784  # TODO: Should be dynamically set from the target function
     num_train = 20
-    batch_size = num_train
-    num_test = 100
+    batch_size = 1  #num_train // 4  #num_train
+    num_test = num_train
 
     x_o = torch.zeros(x_dim)
     # Create training data
@@ -399,14 +402,14 @@ def main(init_rtol, init_atol):
     num_epochs_lipschitz = 100
     lipschitz_experiment_compute(num_epochs_lipschitz, init_rtol, init_atol, x_o)
     rtol_final_lipschitz, atol_final_lipschitz = plot_loss('lipschitz')
-    plot_functions('lipschitz', num_epochs_lipschitz, rtol_final_lipschitz, atol_final_lipschitz, x_o, true_y_abs)'''
+    plot_functions('lipschitz', num_epochs_lipschitz, rtol_final_lipschitz, atol_final_lipschitz, x_o, true_y_abs)
 
     print("Beginning Invertibility experiments...")
     num_epochs_invertible = 100
     invertible_experiment_compute(num_epochs_invertible, init_rtol, init_atol, x_o)
     rtol_final_invertible, atol_final_invertible = plot_loss('invertible')
     plot_functions('invertible', num_epochs_invertible, rtol_final_invertible, atol_final_invertible, x_o, true_y_exp)
-    plot_inverse_functions('invertible', num_epochs_invertible, rtol_final_invertible, atol_final_invertible, x_o)
+    plot_inverse_functions('invertible', num_epochs_invertible, rtol_final_invertible, atol_final_invertible, x_o)'''
 
     print("Beginning High Dimensionality Invertibility experiments...")
     num_epochs_invertible_high_dim = 100
@@ -416,6 +419,6 @@ def main(init_rtol, init_atol):
 
 if __name__ == "__main__":
     print("Beginning experiments...")
-    init_rtol, init_atol = 1.0, 1.0
+    init_rtol, init_atol = 100.0, 100.0
     main(init_rtol, init_atol)
     print("Finished!")
