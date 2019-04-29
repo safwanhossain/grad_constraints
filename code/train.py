@@ -406,16 +406,16 @@ def main(init_rtol, init_atol):
     x_o = torch.zeros(1)
 
     # TODO: Should change to argparse
-    '''print("Beginning Lipschitz experiments...")
-    num_epochs_lipschitz = 100
+    print("Beginning Lipschitz experiments...")
+    num_epochs_lipschitz = 50
     lipschitz_experiment_compute(num_epochs_lipschitz, init_rtol, init_atol, x_o, torch.tanh, 'lipschitz')
     def scale_tanh(x): return torch.tanh(x) * np.exp(2)
     lipschitz_experiment_compute(num_epochs_lipschitz, init_rtol, init_atol, x_o, scale_tanh, 'lipschitz_incorrect')
     rtol_final_lipschitz, atol_final_lipschitz = plot_loss('lipschitz')
-    plot_functions('lipschitz', num_epochs_lipschitz, rtol_final_lipschitz, atol_final_lipschitz, x_o, true_y_abs)'''
+    plot_functions('lipschitz', num_epochs_lipschitz, rtol_final_lipschitz, atol_final_lipschitz, x_o, true_y_abs)
 
     print("Beginning Invertibility experiments...")
-    num_epochs_invertible = 25
+    num_epochs_invertible = 50
     def square(x): return x ** 2 + np.exp(-2)
     invertible_experiment_compute(num_epochs_invertible, init_rtol, init_atol, x_o, square, 'invertible')
     def scale_tanh(x): return torch.tanh(x) * np.exp(2)

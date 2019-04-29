@@ -33,7 +33,7 @@ class Dynamics(nn.Module):
         self.final_activation = final_activation
 
         # Layers
-        self.d = max(25, self.xdim, self.ydim)
+        self.d = max(64, self.xdim, self.ydim)
         self.linear_layers = nn.Sequential(
             nn.Linear(xdim, self.d),
             torch.nn.LeakyReLU(),
