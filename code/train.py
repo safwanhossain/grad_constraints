@@ -37,7 +37,7 @@ class derivative_net(object):
 
         self.rtol = rtol
         self.atol = atol
-        self.lr = 0.01
+        self.lr = 0.005
         self.momentum = 0.0  # 0.9
         self.gpu = False
         self.results_dir = 'results/'
@@ -52,7 +52,7 @@ class derivative_net(object):
         self.loss_csv_writer = csv.writer(loss_csv_file, delimiter=',')
 
     def loss(self, y_pred, y):
-        return torch.sum((y_pred - y) ** 2)
+        return torch.sum(torch.abs(y_pred - y))
 
     def train(self):
         with torch.no_grad():
@@ -67,7 +67,7 @@ class derivative_net(object):
                 self.optimizer.zero_grad()
                 loss.backward()  # retain_graph=True)
                 self.optimizer.step()
-
+                #print(batch_data[1])
                 y_mag = torch.max(torch.sum(torch.abs(batch_data[1]), dim=0))
                 self.loss_csv_writer.writerow([str(torch.abs(loss).item()), self.atol, self.rtol, str(y_mag.item())])
                 if torch.abs(loss) < (self.atol + self.rtol * y_mag):
@@ -235,13 +235,15 @@ def plot_functions(test_name, num_epochs, rtol, atol, x_o, true_y):
     ax.fill_between(final_x, final_y_pred + final_y_error, final_y_pred - final_y_error,
                     color='b', alpha=0.2)
 
-    ax.plot(baseline_x, baseline_y_pred, label='Final Unconstrained Learned Function', c='y')
+    ax.plot(baseline_x, baseline_y_pred, label='Final Unconstrained Learned Function', c='m')
     baseline_y_error = np.abs(baseline_y_pred) * rtol + atol
     ax.fill_between(baseline_x, baseline_y_pred + baseline_y_error, baseline_y_pred - baseline_y_error,
-                    color='y', alpha=0.2)
+                    color='m', alpha=0.2)
 
     ax.scatter(x_o, true_y(x_o), color='y', marker='*', label='Initial Conditions',
                s=mpl.rcParams['lines.markersize'] * 8, zorder=20)
+
+    #ax.set_ylim(min(initial_y), max(initial_y))
 
     # Plot training data
     ax.scatter(train_x, train_y, label='Training Data', c='k',
@@ -268,7 +270,7 @@ def true_y_exp(x):
     :param x:
     :return:
     """
-    y = torch.exp(x)
+    y = torch.exp(x)#torch.sigmoid(x * 5) * 2 #exp(x)
     return y
 
 
@@ -293,15 +295,15 @@ def plot_inverse_functions(test_name, num_epochs, rtol, atol, x_o):
     final_y = np.array([y for y, _ in sorted_zipped_inverse])
     final_x_pred = np.array([x_pred for _, x_pred in sorted_zipped_inverse])
 
-    ax.plot(final_y, final_x_pred, label='Final Constrained Learned Inverse', c='g')
+    ax.plot(final_y, final_x_pred, label='Final Constrained Learned Inverse', c='b')
     final_x_error = np.abs(final_x_pred) * rtol + atol
     ax.fill_between(final_y, final_x_pred + final_x_error, final_x_pred - final_x_error,
-                    color='g', alpha=0.2)
+                    color='b', alpha=0.2)
 
-    ax.plot(baseline_y, baseline_x_pred, label='Final Unconstrained Learned Inverse', c='y')
+    ax.plot(baseline_y, baseline_x_pred, label='Final Unconstrained Learned Inverse', c='m')
     baseline_x_error = np.abs(baseline_x_pred) * rtol + atol
     ax.fill_between(baseline_y, baseline_x_pred + baseline_x_error, baseline_x_pred - baseline_x_error,
-                    color='y', alpha=0.2)
+                    color='m', alpha=0.2)
 
     ax.scatter(true_y_exp(x_o), x_o, color='y', marker='*', label='Initial Conditions',
                s=mpl.rcParams['lines.markersize'] * 8, zorder=20)
@@ -319,7 +321,7 @@ def invertible_experiment_compute(num_epochs, rtol, atol, x_o, activation, save_
     y_dim = 1
     num_train = 5
     batch_size = num_train
-    num_test = 100
+    num_test = 101
 
     # Create training data
     x_train = torch.linspace(-1, 1, num_train).reshape(-1, x_dim)
@@ -343,9 +345,9 @@ def invertible_experiment_compute(num_epochs, rtol, atol, x_o, activation, save_
 def lipschitz_experiment_compute(num_epochs, rtol, atol, x_o, activation, save_name):
     x_dim = 1
     y_dim = 1
-    num_train = 4
+    num_train = 5
     batch_size = num_train
-    num_test = 100
+    num_test = 101
 
     # Create training data.
     x_train = torch.linspace(-1, 1, num_train).reshape(-1, x_dim)
@@ -355,7 +357,7 @@ def lipschitz_experiment_compute(num_epochs, rtol, atol, x_o, activation, save_n
     initial_c = (x_o, target_function(x_o))
 
     # Create testing data.
-    x_test = torch.linspace(-2, 2, num_test).reshape(-1, x_dim)
+    x_test = torch.linspace(-2.0, 2.0, num_test).reshape(-1, x_dim)
     y_test = target_function(x_test)
     test_dataset = create_dataset(x_test, y_test, batch_size)
 
@@ -406,19 +408,21 @@ def main(init_rtol, init_atol):
     x_o = torch.zeros(1)
 
     # TODO: Should change to argparse
-    print("Beginning Lipschitz experiments...")
+    '''print("Beginning Lipschitz experiments...")
     num_epochs_lipschitz = 50
     lipschitz_experiment_compute(num_epochs_lipschitz, init_rtol, init_atol, x_o, torch.tanh, 'lipschitz')
-    def scale_tanh(x): return torch.tanh(x) * np.exp(2)
+    def scale_tanh(x): return x  #torch.tanh(x) * 10.0
     lipschitz_experiment_compute(num_epochs_lipschitz, init_rtol, init_atol, x_o, scale_tanh, 'lipschitz_incorrect')
     rtol_final_lipschitz, atol_final_lipschitz = plot_loss('lipschitz')
-    plot_functions('lipschitz', num_epochs_lipschitz, rtol_final_lipschitz, atol_final_lipschitz, x_o, true_y_abs)
+    plot_functions('lipschitz', num_epochs_lipschitz, rtol_final_lipschitz, atol_final_lipschitz, x_o, true_y_abs)'''
 
     print("Beginning Invertibility experiments...")
     num_epochs_invertible = 50
-    def square(x): return x ** 2 + np.exp(-2)
+    def square(x):
+        val = x ** 2 + 0.001
+        return val
     invertible_experiment_compute(num_epochs_invertible, init_rtol, init_atol, x_o, square, 'invertible')
-    def scale_tanh(x): return torch.tanh(x) * np.exp(2)
+    def scale_tanh(x): return torch.tanh(x) * 10
     invertible_experiment_compute(num_epochs_invertible, init_rtol, init_atol, x_o, scale_tanh, 'invertible_incorrect')
     rtol_final_invertible, atol_final_invertible = plot_loss('invertible')
     plot_functions('invertible', num_epochs_invertible, rtol_final_invertible, atol_final_invertible, x_o, true_y_exp)
@@ -432,6 +436,6 @@ def main(init_rtol, init_atol):
 
 if __name__ == "__main__":
     print("Beginning experiments...")
-    init_rtol, init_atol = 10.0, 10.0
+    init_rtol, init_atol = 0.1, 0.1
     main(init_rtol, init_atol)
     print("Finished!")
